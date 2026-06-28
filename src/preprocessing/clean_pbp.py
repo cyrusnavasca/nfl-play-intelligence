@@ -1,3 +1,10 @@
+"""
+Usage (from project root):
+    python3 -m src.preprocessing.clean_pbp
+
+Input:  data/raw/pbp/season=*.parquet
+Output: data/interim/pbp_clean.parquet
+"""
 import pandas as pd
 from pathlib import Path
 
@@ -41,33 +48,57 @@ def filter_offensive_plays(df: pd.DataFrame) -> pd.DataFrame:
 
 def select_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Keep ONLY pre-play + outcome fields.
-    No leakage allowed here.
+    Keep pre-play context + outcome fields.
+    Broad selection preserves flexibility for downstream filtering.
+    No leakage allowed in model features — filter appropriately at training time.
     """
 
     cols = [
-        # Game state
+        # ── Identifiers ──────────────────────────────────────────────
         "game_id",
+        "play_id",
         "season",
-        "quarter",
+        "week",
+        "game_date",
+        "season_type",              # REG / POST
+
+        # ── Teams & matchup ──────────────────────────────────────────
+        "home_team",
+        "away_team",
+        "posteam",
+        "defteam",
+        "posteam_type",             # home / away
+
+        # ── Game state ───────────────────────────────────────────────
+        "game_half",                # Half1 / Half2 / Overtime
+        "qtr",
+        "quarter_seconds_remaining",
+        "half_seconds_remaining",
+        "game_seconds_remaining",
         "down",
         "ydstogo",
         "yardline_100",
-        "half_seconds_remaining",
-        "game_seconds_remaining",
-        "score_differential",
 
-        # Play info
+        # ── Score & win probability ───────────────────────────────────
+        "posteam_score",
+        "defteam_score",
+
+        # ── Play type & formation ─────────────────────────────────────
         "play_type",
-        "shotgun",
-        "no_huddle",
+        "offense_formation",
+        "defenders_in_box",
+        "number_of_pass_rushers",
+        "offense_personnel",
+        "defense_personnel",
 
-        # Teams
-        "posteam",
-        "defteam",
+        # ── Environment ──────────────────────────────────────────────
+        "roof",                     # open / closed / dome / outdoors
+        "surface",                  # grass / turf
+        "temp",
+        "wind",
 
-        # Target
-        "yards_gained",
+        # ── Main Target ───────────────────────────────────────────────
+        "yards_gained"
     ]
 
     # Keep only columns that exist (robustness across seasons)
@@ -84,17 +115,14 @@ def clean_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     Handle missing data in a simple, deterministic way.
     """
 
-    # Drop rows where target is missing
-    df = df.dropna(subset=["yards_gained", "down", "ydstogo"])
+    # Drop rows where core fields are missing
+    df = df.dropna(subset=["yards_gained", "down", "ydstogo", "yardline_100"])
 
-    # Fill safe binary features
-    for col in ["shotgun", "no_huddle"]:
+
+    # Neutral default for score context
+    for col in ["posteam_score", "defteam_score"]:
         if col in df.columns:
             df[col] = df[col].fillna(0)
-
-    # Fill game state (safe default = neutral)
-    if "score_differential" in df.columns:
-        df["score_differential"] = df["score_differential"].fillna(0)
 
     print(f"[INFO] After missing value handling: {df.shape}")
     return df
@@ -103,15 +131,33 @@ def clean_missing_values(df: pd.DataFrame) -> pd.DataFrame:
 def convert_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     """
     Ensure consistent types for modeling.
+
+    season                             → int64
+    week, qtr, down, ydstogo,
+    posteam/defteam scores,
+    defenders_in_box,
+    number_of_pass_rushers             → Int64 (nullable int)
+    time/field floats, temp, wind      → float32
+    yards_gained                       → float32
     """
 
-    int_cols = ["down", "ydstogo", "quarter"]
-    float_cols = ["yardline_100", "half_seconds_remaining", "game_seconds_remaining"]
+    if "season" in df.columns:
+        df["season"] = df["season"].astype("int64")
 
+    int_cols = [
+        "week", "qtr", "down", "ydstogo",
+        "posteam_score", "defteam_score",
+        "defenders_in_box", "number_of_pass_rushers",
+    ]
     for col in int_cols:
         if col in df.columns:
             df[col] = df[col].astype("float").astype("Int64")
 
+    float_cols = [
+        "quarter_seconds_remaining", "half_seconds_remaining",
+        "game_seconds_remaining", "yardline_100",
+        "temp", "wind",
+    ]
     for col in float_cols:
         if col in df.columns:
             df[col] = df[col].astype("float32")
@@ -124,15 +170,7 @@ def convert_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def remove_invalid_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Final sanity filters.
-    """
-
-    # Remove impossible values
     df = df[df["ydstogo"] > 0]
-
-    # Remove extreme missing game state
-    df = df.dropna(subset=["yardline_100"])
 
     print(f"[INFO] After final filtering: {df.shape}")
     return df
