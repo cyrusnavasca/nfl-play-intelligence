@@ -97,6 +97,9 @@ def select_columns(df: pd.DataFrame) -> pd.DataFrame:
         "temp",
         "wind",
 
+        # ── Play efficiency ───────────────────────────────────────────
+        "epa",                      # expected points added per play
+
         # ── Main Target ───────────────────────────────────────────────
         "yards_gained"
     ]
@@ -137,7 +140,7 @@ def convert_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     posteam/defteam scores,
     defenders_in_box,
     number_of_pass_rushers             → Int64 (nullable int)
-    time/field floats, temp, wind      → float32
+    time/field floats, temp, wind, epa → float32
     yards_gained                       → float32
     """
 
@@ -156,7 +159,7 @@ def convert_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     float_cols = [
         "quarter_seconds_remaining", "half_seconds_remaining",
         "game_seconds_remaining", "yardline_100",
-        "temp", "wind",
+        "temp", "wind", "epa",
     ]
     for col in float_cols:
         if col in df.columns:

@@ -6,3 +6,5 @@ seaborn
 scikit-learn
 jupyter
 nfl_data_py
+xgboost
+statsmodels
