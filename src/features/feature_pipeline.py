@@ -10,7 +10,7 @@ Input:
     data/interim/pbp_clean.parquet
 
 Output:
-    data/processed/pbp_features.parquet
+    data/processed/model_dataset.parquet
 
 Pipeline:
     1. Load pbp_clean
@@ -29,7 +29,7 @@ from src.features.team_features import build_team_features
 
 
 PBP_PATH = Path("data/interim/pbp_clean.parquet")
-OUT_PATH = Path("data/processed/pbp_features.parquet")
+OUT_PATH = Path("data/processed/model_dataset.parquet")
 
 
 def build_feature_dataset(pbp_path: Path = PBP_PATH) -> pd.DataFrame:

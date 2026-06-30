@@ -164,7 +164,7 @@ Prerequisite:
 
 ```bash
 python3 -m src.preprocessing.clean_pbp      # regenerate without player IDs
-python3 -m src.features.feature_pipeline    # rebuild pbp_features.parquet
+python3 -m src.features.feature_pipeline    # rebuild model_dataset.parquet
 ```
 
 Expected output shape: **279,917 rows × ~37 columns** (32 from clean_pbp + 5 team features).

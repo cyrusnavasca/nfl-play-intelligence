@@ -121,7 +121,7 @@ a model that supports missing values natively (XGBoost, LightGBM).
 
 ### Output
 
-`data/processed/pbp_features.parquet` — the fully-featured PBP dataset ready for model training.
+`data/processed/model_dataset.parquet` — the fully-featured PBP dataset ready for model training.
 
 ---
 
