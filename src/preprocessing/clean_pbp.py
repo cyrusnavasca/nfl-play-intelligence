@@ -32,15 +32,13 @@ def load_raw_data() -> pd.DataFrame:
 def filter_offensive_plays(df: pd.DataFrame) -> pd.DataFrame:
     """
     Keep only meaningful offensive plays for modeling yards gained.
+    Excludes qb_spike and qb_kneel — both are non-competitive plays that
+    would distort yardage and EPA learning.
     """
 
-    # Keep only standard play types
-    valid_play_types = ["run", "pass", "sack", "qb_kneel", "qb_spike"]
+    valid_play_types = ["run", "pass", "sack"]
 
     df = df[df["play_type"].isin(valid_play_types)].copy()
-
-    # Remove special cases that distort yardage learning
-    df = df[df["play_type"] != "qb_spike"]
 
     print(f"[INFO] After filtering plays: {df.shape}")
     return df
@@ -87,7 +85,6 @@ def select_columns(df: pd.DataFrame) -> pd.DataFrame:
         "play_type",
         "offense_formation",
         "defenders_in_box",
-        "number_of_pass_rushers",
         "offense_personnel",
         "defense_personnel",
 
@@ -119,11 +116,16 @@ def clean_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     """
 
     # Drop rows where core fields are missing
-    df = df.dropna(subset=["yards_gained", "down", "ydstogo", "yardline_100"])
+    df = df.dropna(subset=["yards_gained", "down", "ydstogo", "yardline_100", "defenders_in_box"]).copy()
 
 
     # Neutral default for score context
     for col in ["posteam_score", "defteam_score"]:
+        if col in df.columns:
+            df[col] = df[col].fillna(0)
+
+    # Dome/closed stadiums have no recorded temp or wind — treat as neutral conditions
+    for col in ["temp", "wind"]:
         if col in df.columns:
             df[col] = df[col].fillna(0)
 
@@ -138,8 +140,7 @@ def convert_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     season                             → int64
     week, qtr, down, ydstogo,
     posteam/defteam scores,
-    defenders_in_box,
-    number_of_pass_rushers             → Int64 (nullable int)
+    defenders_in_box                   → Int64 (nullable int)
     time/field floats, temp, wind, epa → float32
     yards_gained                       → float32
     """
@@ -150,7 +151,7 @@ def convert_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     int_cols = [
         "week", "qtr", "down", "ydstogo",
         "posteam_score", "defteam_score",
-        "defenders_in_box", "number_of_pass_rushers",
+        "defenders_in_box",
     ]
     for col in int_cols:
         if col in df.columns:
