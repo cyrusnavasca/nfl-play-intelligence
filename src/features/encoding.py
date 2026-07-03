@@ -47,8 +47,9 @@ def encode_roof(df: pd.DataFrame) -> pd.DataFrame:
     """
     is_indoor: 1 = dome/closed (no weather), 0 = outdoors/open, NaN = unknown.
 
-    Indoor games have structural temp/wind missingness, which is handled
-    downstream by weather_features.build_weather_features().
+    Indoor games (dome/closed) have no recorded temp/wind; those nulls are
+    imputed to 0 upstream in clean_pbp.py. This flag preserves the indoor
+    signal that the imputation would otherwise hide.
     """
     def _map(s: str) -> int | float:
         if pd.isna(s):

@@ -6,13 +6,23 @@ Features are grouped by source and type. Implementation status tracked against `
 ---
 
 ## Status Key
-- ✅ Already implemented (`src/features/situational_features.py`)
+- ✅ Implemented and wired into `feature_pipeline.py` (lands in `model_dataset.parquet`)
 - 🔧 Needs implementation
+- 🗑️ Deprecated — built once but intentionally not integrated (see Core Features Integration, `docs/core_features_integration_plan.md`)
 - ⚠️ Requires joining player data back to PBP first
+
+> **Core features integration (implemented):** A curated 12-feature subset from
+> `formation_features.py`, `situational_features.py`, and `encoding.py` is now wired into
+> the pipeline. Everything from those modules not listed as ✅ below was deprecated in that
+> pass. `weather_features.py` and `interaction_features.py` were never built and are not
+> currently planned — their sections below are kept as future ideas only.
 
 ---
 
 ## 1. Category Simplifications / Encodings
+
+✅ All four encodings below are implemented in `encoding.py` and wired into the pipeline
+(`is_turf`, `is_indoor`, `is_playoffs`, `is_home`).
 
 These raw string columns need to be collapsed or encoded before modeling.
 
@@ -47,45 +57,28 @@ posteam_type: away → 0
 
 ## 2. Game State Features
 
-### Already Implemented ✅
+### Implemented & wired ✅
 | Feature | Logic | Notes |
 |---|---|---|
 | `score_differential` | `posteam_score - defteam_score` | Positive = leading |
-| `time_adjusted_score_diff` | `score_differential × game_progress` | Urgency-weighted |
+| `time_adjusted_score_diff` | `score_differential × game_progress` | Urgency-weighted; game progress computed inline |
 | `red_zone` | `yardline_100 ≤ 20` | Binary |
 | `backed_up` | `yardline_100 ≥ 80` | Binary |
-| `two_minute_game` | `game_seconds_remaining ≤ 120` | Binary |
-| `two_minute_half` | `half_seconds_remaining ≤ 120` | Binary |
-| `two_minute_drill` | Either two-minute flag is 1 | Combined binary |
+| `two_minute_drill` | `game_seconds_remaining ≤ 120` OR `half_seconds_remaining ≤ 120` | Combined binary, computed inline |
 
-### To Engineer 🔧
+### Deprecated 🗑️ (built once, not integrated)
+The intermediate two-minute flags and the following context features were removed from
+`situational_features.py` during the core-features integration — they were never wired in
+and are not part of the curated set:
 
-**Game progress**
-| Feature | Logic | Intuition |
-|---|---|---|
-| `game_progress` | `1 - (game_seconds_remaining / 3600)` | 0.0 at kickoff → 1.0 at final whistle |
-| `half_progress` | `1 - (half_seconds_remaining / 1800)` | Urgency within a half |
-| `is_overtime` | `qtr == 5` | OT plays have distinct tendencies |
-
-**Score context**
-| Feature | Logic | Intuition |
-|---|---|---|
-| `score_diff_abs` | `abs(score_differential)` | Blowout vs. close game |
-| `is_blowout` | `score_diff_abs ≥ 17` | Team likely runs more to protect lead |
-| `is_close` | `score_diff_abs ≤ 3` | Pass-heavy when every drive matters |
-| `game_script` | `score_differential × game_progress` | Combines deficit + urgency in one signal |
-| `total_score` | `posteam_score + defteam_score` | High-scoring games may open up play calls |
-
-**Down & distance context**
-| Feature | Logic | Intuition |
-|---|---|---|
-| `distance_bucket` | `short (1–3), medium (4–6), long (7+)` | Categorical compression of ydstogo |
-| `ydstogo_normalized` | `ydstogo / 10` | Scales distance to 0–1-ish range |
-| `yards_available` | `100 - yardline_100` | Yards between LOS and end zone |
-| `ydstogo_ratio` | `ydstogo / yards_available` | How much of remaining field is needed |
-| `is_short_yardage` | `down ≥ 2 & ydstogo ≤ 2` | Classic power run situation |
-| `is_third_and_long` | `down == 3 & ydstogo ≥ 7` | Pass-heavy; defense knows it too |
-| `is_fourth_down` | `down == 4` | Distinct decision point |
+| Feature | Reason |
+|---|---|
+| `two_minute_game`, `two_minute_half` | Folded inline into `two_minute_drill` |
+| `total_score` | Not in curated set |
+| `score_diff_abs`, `is_blowout`, `is_close`, `game_script` | Not in curated set |
+| `game_progress`, `half_progress`, `is_overtime` | Not in curated set |
+| `distance_bucket`, `ydstogo_normalized`, `yards_available`, `ydstogo_ratio` | Not in curated set |
+| `is_short_yardage`, `is_third_and_long`, `is_fourth_down` | Not in curated set |
 
 ---
 
@@ -94,18 +87,21 @@ posteam_type: away → 0
 ### 3.1 Offensive Personnel Parsing
 Parse `offense_personnel` (e.g. `"1 RB, 1 TE, 3 WR"`) into numeric counts.
 
-| Feature | Logic |
-|---|---|
-| `off_rb_count` | Extract RB number from string |
-| `off_te_count` | Extract TE number |
-| `off_wr_count` | Extract WR number |
-| `personnel_package` | Label: `"11"` (1RB/1TE/3WR), `"12"` (1RB/2TE/2WR), `"21"`, `"22"`, etc. |
-| `is_heavy_formation` | `off_rb_count + off_te_count ≥ 3` — run-leaning package |
-| `is_spread_formation` | `off_wr_count ≥ 3` — pass-leaning package |
+| Feature | Logic | Status |
+|---|---|---|
+| `off_rb_count` | Extract RB number from string | 🗑️ internal-only (temp, dropped before output) |
+| `off_te_count` | Extract TE number | 🗑️ internal-only (temp, dropped before output) |
+| `off_wr_count` | Extract WR number | 🗑️ internal-only (temp, dropped before output) |
+| `personnel_package` | Label: `"11"`, `"12"`, `"21"`, `"22"`, etc. | 🔧 not built |
+| `is_heavy_formation` | `off_rb_count + off_te_count ≥ 3` — run-leaning package | ✅ implemented & wired |
+| `is_spread_formation` | `off_wr_count ≥ 3` — pass-leaning package | ✅ implemented & wired |
 
 > Standard NFL shorthand: first digit = RBs, second = TEs (e.g. "11" = 1 RB, 1 TE, 3 WR).
+> The three position counts are kept as internal temporaries — the surviving features derive
+> from them — but are dropped before the frame is returned, so they never reach
+> `model_dataset.parquet`.
 
-### 3.2 Defensive Personnel Parsing
+### 3.2 Defensive Personnel Parsing 🔧 (not built)
 Parse `defense_personnel` (e.g. `"4 DL, 2 LB, 5 DB"`) into numeric counts.
 
 | Feature | Logic |
@@ -118,17 +114,20 @@ Parse `defense_personnel` (e.g. `"4 DL, 2 LB, 5 DB"`) into numeric counts.
 | `box_db_ratio` | `defenders_in_box / def_db_count` — run vs. pass alignment signal |
 
 ### 3.3 Defenders in Box
-| Feature | Logic | Intuition |
-|---|---|---|
-| `box_advantage` | `off_rb_count + off_te_count - defenders_in_box` | Positive = numbers advantage in run game |
-| `is_stacked_box` | `defenders_in_box ≥ 8` | Defense loaded for run stop |
-| `is_light_box` | `defenders_in_box ≤ 5` | Defense expecting pass |
-| `pass_rusher_ratio` | `number_of_pass_rushers / def_dl_count` | Blitz indicator |
-| `is_blitz` | `number_of_pass_rushers ≥ 5` | Extra pressure coming |
+| Feature | Logic | Intuition | Status |
+|---|---|---|---|
+| `box_advantage` | `off_rb_count + off_te_count - defenders_in_box` | Positive = numbers advantage in run game | ✅ implemented & wired |
+| `is_stacked_box` | `defenders_in_box ≥ 8` | Defense loaded for run stop | 🔧 not built |
+| `is_light_box` | `defenders_in_box ≤ 5` | Defense expecting pass | 🔧 not built |
+| `pass_rusher_ratio` | `number_of_pass_rushers / def_dl_count` | Blitz indicator | 🔧 not built |
+| `is_blitz` | `number_of_pass_rushers ≥ 5` | Extra pressure coming | 🔧 not built |
 
 ---
 
-## 4. Interaction Features
+## 4. Interaction Features 🔧 (not built — future idea only)
+
+> There is no `interaction_features.py` module. None of the features below are built or
+> planned; this section is retained purely as a backlog of ideas.
 
 Combinations that are more informative than either feature alone.
 
@@ -145,17 +144,20 @@ Combinations that are more informative than either feature alone.
 
 ## 5. Environmental Features
 
-| Feature | Logic | Notes |
-|---|---|---|
-| `is_turf` | See §1.1 | Binary |
-| `is_indoor` | See §1.2 | Binary; also explains temp/wind nulls |
-| `temp_bucket` | `≤32, 33–45, 46–60, 61–75, >75` | Ordinal or one-hot |
-| `wind_bucket` | `0–5, 6–10, 11–15, 16–20, >20` | Ordinal or one-hot |
-| `is_freezing` | `temp ≤ 32` | Extreme cold flag |
-| `is_high_wind` | `wind ≥ 20` | Extreme wind flag; strongly suppresses passing |
-| `is_bad_weather` | `is_freezing OR is_high_wind` | Combined adverse weather flag |
+`is_turf` and `is_indoor` are implemented in `encoding.py` (see §1) and wired into the
+pipeline. The weather buckets below are 🔧 **not built** — there is no `weather_features.py`
+module, and they are not currently planned. Note that temp/wind nulls (indoor games) are
+imputed to 0 upstream in `clean_pbp.py`, so `is_indoor` preserves that signal.
 
-> For `is_indoor` rows, fill `temp` and `wind` with their respective means (or 0) before bucketing, since missing-ness is structural not random.
+| Feature | Logic | Status |
+|---|---|---|
+| `is_turf` | See §1.1 | ✅ implemented & wired |
+| `is_indoor` | See §1.2; also explains temp/wind nulls | ✅ implemented & wired |
+| `temp_bucket` | `≤32, 33–45, 46–60, 61–75, >75` | 🔧 not built |
+| `wind_bucket` | `0–5, 6–10, 11–15, 16–20, >20` | 🔧 not built |
+| `is_freezing` | `temp ≤ 32` | 🔧 not built |
+| `is_high_wind` | `wind ≥ 20` | 🔧 not built |
+| `is_bad_weather` | `is_freezing OR is_high_wind` | 🔧 not built |
 
 ---
 
@@ -240,13 +242,13 @@ These columns exist in `pbp_clean` but must never enter the model as features.
 
 ## Implementation Map
 
-| Category | Target file |
-|---|---|
-| Category simplifications | `src/features/encoding.py` |
-| Game state (additions) | `src/features/situational_features.py` |
-| Personnel / formation parsing | `src/features/formation_features.py` |
-| Interaction features | `src/features/interaction_features.py` |
-| Environmental features | `src/features/weather_features.py` |
-| Rolling player features | `src/features/player_features.py` |
-| Rolling team features | `src/features/team_features.py` |
-| Full pipeline | `src/features/feature_pipeline.py` |
+| Category | Target file | Status |
+|---|---|---|
+| Category simplifications | `src/features/encoding.py` | ✅ wired |
+| Game state (curated subset) | `src/features/situational_features.py` | ✅ wired |
+| Personnel / formation parsing | `src/features/formation_features.py` | ✅ wired |
+| Interaction features | _(none — never built)_ | 🔧 not planned |
+| Environmental features | _(none — never built)_ | 🔧 not planned |
+| Rolling player features | `src/features/player_features.py` | 🔧 not built |
+| Rolling team features | `src/features/team_features.py` | ✅ wired |
+| Full pipeline | `src/features/feature_pipeline.py` | ✅ |

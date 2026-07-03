@@ -75,16 +75,26 @@ def add_box_advantage(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+_TEMP_COUNT_COLS = ["off_rb_count", "off_te_count", "off_wr_count"]
+
+
 def build_formation_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Master function: parse personnel strings and derive all formation features.
+    Master function: parse personnel strings and derive the 3 formation features.
+
+    Output columns: is_heavy_formation, is_spread_formation, box_advantage.
 
     Applied in order:
-        1. parse_offense_personnel   → off_rb_count, off_te_count, off_wr_count
+        1. parse_offense_personnel   → off_rb_count, off_te_count, off_wr_count (temp)
         2. add_formation_flags       → is_heavy_formation, is_spread_formation
         3. add_box_advantage         → box_advantage
+        4. drop the temporary count columns so only the 3 features are added
+
+    The position counts are internal-only: the three surviving features all derive
+    from them, but the raw counts are not emitted to the final dataset.
     """
     df = parse_offense_personnel(df)
     df = add_formation_flags(df)
     df = add_box_advantage(df)
+    df = df.drop(columns=_TEMP_COUNT_COLS)
     return df
