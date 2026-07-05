@@ -1,12 +1,7 @@
 """
-Phase 4 — threshold-based feature selection and selection manifest.
+Joint selection manifest and cross-task summary artifacts.
 
-Applies fixed Stage 1 (univariate) and Stage 2 (embedded) gates to produce
-machine-readable keep lists. Generates out-of-fold ``pred_pass_proba`` for
-Task 2 when not supplied from Phase 3.
-
-Usage (from project root):
-    python3 -m src.selection.threshold_selection
+Composes Task 1 and Task 2 final keep lists from their threshold modules.
 """
 from __future__ import annotations
 
@@ -15,36 +10,55 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from src.selection.embedded_selection import (
-    EmbeddedSelectionResults,
+from src.selection.play_type.embedded import (
+    PlayTypeEmbeddedResults,
     build_task1_feature_matrix,
-    chi2_significant_categoricals,
     cross_fitted_pass_proba,
-    run_embedded_selection,
 )
-from src.selection.feature_schema import (
+from src.selection.play_type.threshold import build_task1_final
+from src.selection.play_type.univariate import PlayTypeUnivariateResults
+from src.selection.shared.common import (
+    binary_play_type,
+    chi2_significant_categoricals,
+    ensure_artifacts_dir,
+    passes_univariate_gate,
+)
+from src.selection.shared.feature_schema import (
     ALL_NUMERIC,
-    ARTIFACTS_DIR,
     CAT_FEATURES,
     CHI2_P_THRESHOLD,
     CROSS_TASK_SUMMARY_CSV,
     DROP_ALWAYS,
     EMBEDDED_THRESHOLD,
     FEATURE_SELECTION_MANIFEST_PATH,
-    FEATURES_FULL_PATH,
     MI_THRESHOLD,
     SP_THRESHOLD,
+    TARGET_CLF,
     TARGET_REG,
     TASK2_GENERATED_FEATURES,
     validate_feature_schema,
 )
-from src.selection.univariate_selection import (
-    UnivariateSelectionResults,
-    binary_play_type,
-    load_features_full,
-    passes_univariate_gate,
-    run_univariate_selection,
-)
+from src.selection.yards_gained.embedded import YardsGainedEmbeddedResults
+from src.selection.yards_gained.threshold import build_task2_final
+from src.selection.yards_gained.univariate import YardsGainedUnivariateResults
+
+
+@dataclass(frozen=True)
+class UnivariateSelectionResults:
+    """Combined univariate results for both tasks (manifest / cross-task views)."""
+
+    chi2: pd.DataFrame
+    task1_numeric: pd.DataFrame
+    task2_numeric: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class EmbeddedSelectionResults:
+    """Combined embedded results for both tasks."""
+
+    task1: pd.DataFrame
+    task2: pd.DataFrame
+    oof_pass_proba: pd.Series
 
 
 @dataclass(frozen=True)
@@ -56,31 +70,34 @@ class ThresholdSelectionResults:
     oof_pass_proba: pd.Series
 
 
-def _assert_no_drop_always(columns: list[str], context: str) -> None:
-    leaked = sorted(set(columns) & set(DROP_ALWAYS))
-    if leaked:
-        raise ValueError(f"{context}: DROP_ALWAYS columns in keep list: {leaked}")
+def combine_univariate_results(
+    task1: PlayTypeUnivariateResults,
+    task2: YardsGainedUnivariateResults,
+) -> UnivariateSelectionResults:
+    return UnivariateSelectionResults(
+        chi2=task1.chi2,
+        task1_numeric=task1.task1_numeric,
+        task2_numeric=task2.task2_numeric,
+    )
 
 
-def passes_embedded_gate(
-    embedded_df: pd.DataFrame,
-    numeric_cols: list[str],
-    *,
-    threshold: float = EMBEDDED_THRESHOLD,
-) -> list[str]:
-    """
-    Univariate-passing numerics that also meet the embedded gain threshold.
+def combine_embedded_results(
+    task1: PlayTypeEmbeddedResults,
+    task2: YardsGainedEmbeddedResults,
+) -> EmbeddedSelectionResults:
+    return EmbeddedSelectionResults(
+        task1=task1.task1,
+        task2=task2.task2,
+        oof_pass_proba=task1.oof_pass_proba,
+    )
 
-    Only rows whose ``feature`` is in *numeric_cols* are considered; one-hot
-    categoricals and ``pred_pass_proba`` are excluded from this gate.
-    """
-    eligible = set(numeric_cols)
-    passed = embedded_df.loc[
-        embedded_df["feature"].isin(eligible)
-        & (embedded_df["embedded_importance_norm"] >= threshold),
-        "feature",
-    ]
-    return passed.tolist()
+
+def load_selection_manifest(
+    path=FEATURE_SELECTION_MANIFEST_PATH,
+) -> dict[str, object]:
+    """Load the Phase 4 selection manifest from disk."""
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def _task1_univariate_pass(
@@ -93,33 +110,6 @@ def _task1_univariate_pass(
 
 def _task2_univariate_pass(univariate_results: UnivariateSelectionResults) -> list[str]:
     return passes_univariate_gate(univariate_results.task2_numeric, mi_col="mi_reg")
-
-
-def build_task1_final(
-    univariate_results: UnivariateSelectionResults,
-    embedded_results: EmbeddedSelectionResults,
-) -> tuple[list[str], list[str]]:
-    """Stage 2 numeric keep + chi-squared categoricals (Task 1)."""
-    univariate_numeric, univariate_categorical = _task1_univariate_pass(univariate_results)
-    final_numeric = passes_embedded_gate(
-        embedded_results.task1, univariate_numeric
-    )
-    _assert_no_drop_always(final_numeric, "task1 final numeric")
-    _assert_no_drop_always(univariate_categorical, "task1 final categorical")
-    return sorted(final_numeric), sorted(univariate_categorical)
-
-
-def build_task2_final(
-    univariate_results: UnivariateSelectionResults,
-    embedded_results: EmbeddedSelectionResults,
-) -> list[str]:
-    """Stage 2 numeric keep plus always-included ``pred_pass_proba``."""
-    univariate_numeric = _task2_univariate_pass(univariate_results)
-    final_numeric = passes_embedded_gate(
-        embedded_results.task2, univariate_numeric
-    )
-    _assert_no_drop_always(final_numeric, "task2 final numeric")
-    return sorted(final_numeric)
 
 
 def _oof_pass_proba(
@@ -315,19 +305,21 @@ def validate_selection_manifest(selection_manifest: dict[str, object]) -> None:
 
 def run_threshold_selection(
     df: pd.DataFrame,
-    univariate_results: UnivariateSelectionResults,
-    embedded_results: EmbeddedSelectionResults | None = None,
+    task1_univariate: PlayTypeUnivariateResults,
+    task1_embedded: PlayTypeEmbeddedResults,
+    task2_univariate: YardsGainedUnivariateResults,
+    task2_embedded: YardsGainedEmbeddedResults,
 ) -> ThresholdSelectionResults:
     """Apply threshold gates and assemble Phase 4 outputs."""
     validate_feature_schema(df.columns.tolist())
 
-    if embedded_results is None:
-        embedded_results = run_embedded_selection(df, univariate_results)
+    univariate_results = combine_univariate_results(task1_univariate, task2_univariate)
+    embedded_results = combine_embedded_results(task1_embedded, task2_embedded)
 
     task1_final_numeric, task1_final_categorical = build_task1_final(
-        univariate_results, embedded_results
+        task1_univariate, task1_embedded
     )
-    task2_final_numeric = build_task2_final(univariate_results, embedded_results)
+    task2_final_numeric = build_task2_final(task2_univariate, task2_embedded)
     oof_pass_proba = _oof_pass_proba(df, univariate_results, embedded_results)
 
     selection_manifest = build_selection_manifest(
@@ -356,57 +348,10 @@ def run_threshold_selection(
 
 def write_threshold_selection_artifacts(results: ThresholdSelectionResults) -> None:
     """Write feature_selection_manifest.json and cross_task_summary.csv."""
-    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_artifacts_dir()
 
     with open(FEATURE_SELECTION_MANIFEST_PATH, "w", encoding="utf-8") as fh:
         json.dump(results.selection_manifest, fh, indent=2)
         fh.write("\n")
 
     results.cross_task_summary.to_csv(CROSS_TASK_SUMMARY_CSV, index=False)
-
-
-def main() -> ThresholdSelectionResults:
-    df = load_features_full()
-    print(f"[INFO] Loaded features_full: {df.shape}")
-
-    print("[INFO] Running univariate selection (Phase 2)...")
-    univariate_results = run_univariate_selection(df)
-
-    print("[INFO] Running embedded selection (Phase 3)...")
-    embedded_results = run_embedded_selection(df, univariate_results)
-
-    print("[INFO] Applying threshold selection (Phase 4)...")
-    results = run_threshold_selection(df, univariate_results, embedded_results)
-    write_threshold_selection_artifacts(results)
-
-    manifest = results.selection_manifest
-    t1 = manifest["task1"]["final"]  # type: ignore[index]
-    t2 = manifest["task2"]["final"]  # type: ignore[index]
-
-    print(f"[DONE] selection manifest → {FEATURE_SELECTION_MANIFEST_PATH}")
-    print(f"[DONE] cross-task summary → {CROSS_TASK_SUMMARY_CSV}")
-    print(
-        f"[INFO] Task 1 final: {len(t1['numeric'])} numeric + "
-        f"{len(t1['categorical'])} categorical"
-    )
-    print(
-        f"[INFO] Task 2 final: {len(t2['numeric'])} numeric + "
-        f"{len(t2['generated'])} generated"
-    )
-    print(f"[INFO] OOF pred_pass_proba mean={results.oof_pass_proba.mean():.4f}")
-
-    print("\nTask 1 final numeric:")
-    for feat in t1["numeric"]:
-        print(f"  {feat}")
-    print("\nTask 1 final categorical:")
-    for feat in t1["categorical"]:
-        print(f"  {feat}")
-    print("\nTask 2 final numeric:")
-    for feat in t2["numeric"]:
-        print(f"  {feat}")
-
-    return results
-
-
-if __name__ == "__main__":
-    main()
