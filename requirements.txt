@@ -7,5 +7,6 @@ scikit-learn
 jupyter
 nfl_data_py
 xgboost
+lightgbm
 scipy
 statsmodels

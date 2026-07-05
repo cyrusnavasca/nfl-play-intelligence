@@ -10,7 +10,7 @@ Input:
     data/interim/pbp_clean.parquet
 
 Output:
-    data/processed/model_dataset.parquet
+    data/interim/features_full.parquet
 
 Pipeline:
     1. Load pbp_clean
@@ -39,7 +39,7 @@ from src.features.encoding import build_encodings
 
 
 PBP_PATH = Path("data/interim/pbp_clean.parquet")
-OUT_PATH = Path("data/processed/model_dataset.parquet")
+OUT_PATH = Path("data/interim/features_full.parquet")
 
 
 def build_feature_dataset(pbp_path: Path = PBP_PATH) -> pd.DataFrame:
