@@ -3,25 +3,16 @@ from __future__ import annotations
 
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
-from src.data.schema import SEED
+from src.models.config import load_model_hyperparameters
 
 __all__ = ["build_rf_classifier", "build_rf_regressor"]
 
 
 def build_rf_classifier() -> RandomForestClassifier:
-    return RandomForestClassifier(
-        n_estimators=300,
-        min_samples_leaf=5,
-        class_weight="balanced",
-        random_state=SEED,
-        n_jobs=-1,
-    )
+    params = load_model_hyperparameters("play_type", "random_forest")
+    return RandomForestClassifier(**params)
 
 
 def build_rf_regressor() -> RandomForestRegressor:
-    return RandomForestRegressor(
-        n_estimators=300,
-        min_samples_leaf=5,
-        random_state=SEED,
-        n_jobs=-1,
-    )
+    params = load_model_hyperparameters("yards_gained", "random_forest")
+    return RandomForestRegressor(**params)

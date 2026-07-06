@@ -3,31 +3,16 @@ from __future__ import annotations
 
 from xgboost import XGBClassifier, XGBRegressor
 
-from src.data.schema import SEED
+from src.models.config import load_model_hyperparameters
 
 __all__ = ["build_xgb_classifier", "build_xgb_regressor"]
 
 
 def build_xgb_classifier() -> XGBClassifier:
-    return XGBClassifier(
-        n_estimators=300,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        eval_metric="logloss",
-        random_state=SEED,
-        verbosity=0,
-    )
+    params = load_model_hyperparameters("play_type", "xgboost")
+    return XGBClassifier(**params)
 
 
 def build_xgb_regressor() -> XGBRegressor:
-    return XGBRegressor(
-        n_estimators=300,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=SEED,
-        verbosity=0,
-    )
+    params = load_model_hyperparameters("yards_gained", "xgboost")
+    return XGBRegressor(**params)

@@ -33,6 +33,8 @@ __all__ = [
     "DROP_ALWAYS",
     "EXPECTED_PLAY_TYPE_FEATURE_COUNT",
     "EXPECTED_YARDS_NUMERIC_COUNT",
+    "BEST_MODEL_DIR",
+    "EXPERIMENTS_DIR",
     "MODELING_ARTIFACTS_DIR",
     "MODEL_REGISTRY_KEYS",
     "ModelingParquetValidationError",
@@ -61,6 +63,8 @@ EXPECTED_YARDS_NUMERIC_COUNT = 21
 # ---------------------------------------------------------------------------
 
 MODELING_ARTIFACTS_DIR = Path("artifacts/modeling")
+EXPERIMENTS_DIR = MODELING_ARTIFACTS_DIR / "experiments"
+BEST_MODEL_DIR = MODELING_ARTIFACTS_DIR / "best_model"
 PLAY_TYPE_ARTIFACTS_DIR = MODELING_ARTIFACTS_DIR / "play_type"
 YARDS_GAINED_ARTIFACTS_DIR = MODELING_ARTIFACTS_DIR / "yards_gained"
 
@@ -190,5 +194,6 @@ if __name__ == "__main__":
         f"{', '.join(TASK2_GENERATED_FEATURES)} + {TARGET_REG})"
     )
     print(f"  artifacts:     {MODELING_ARTIFACTS_DIR}")
+    print(f"  experiments:   {EXPERIMENTS_DIR}")
     print(f"  model keys:    {', '.join(MODEL_REGISTRY_KEYS)}")
     print(f"  CV:            N_FOLDS={N_FOLDS}, SEED={SEED}")

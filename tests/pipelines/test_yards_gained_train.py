@@ -38,7 +38,7 @@ def test_oof_proba_appended_before_split(yards_subsample, monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "src.pipelines.yards_gained.train.get_best_oof_proba",
-        lambda: oof_proba,
+        lambda **_: oof_proba,
     )
 
     X, y_out = build_augmented_yards_frame()
@@ -60,7 +60,7 @@ def test_holdout_smoke_on_subsample(yards_subsample, monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "src.pipelines.yards_gained.train.get_best_oof_proba",
-        lambda: oof_proba,
+        lambda **_: oof_proba,
     )
 
     records, comparison, holdout_df, pred_frame = run_yards_gained_holdout()
@@ -81,7 +81,9 @@ def test_holdout_smoke_on_subsample(yards_subsample, monkeypatch) -> None:
 
 
 def test_oof_parquet_has_zero_nans_when_present() -> None:
-    oof_path = Path("artifacts/modeling/play_type/oof_predictions.parquet")
+    from src.utils.experiments import resolve_task_artifacts_dir
+
+    oof_path = resolve_task_artifacts_dir("play_type") / "oof_predictions.parquet"
     if not oof_path.exists():
         return
     oof_df = pd.read_parquet(oof_path)

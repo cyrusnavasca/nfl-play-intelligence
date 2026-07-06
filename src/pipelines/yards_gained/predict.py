@@ -13,24 +13,49 @@ import pandas as pd
 from sklearn.impute import SimpleImputer
 
 from src.data.loaders import yards_numeric_columns
-from src.data.schema import SEED, YARDS_GAINED_ARTIFACTS_DIR
+from src.data.schema import SEED
 from src.evaluation.model_selection import select_best_model
 from src.models import REGRESSOR_BUILDERS
 from src.pipelines.yards_gained.train import (
     MODEL_COMPARISON_FILENAME,
     build_augmented_yards_frame,
 )
-from src.utils.io import ensure_artifacts_dir, save_model
+from src.utils.experiments import (
+    get_active_experiment,
+    promote_experiment_to_best_model,
+    read_experiment_config,
+    resolve_task_artifacts_dir,
+    update_experiment_config,
+)
+from src.utils.io import save_feature_importance, save_model
 
 __all__ = ["refit_best_regressor"]
 
-BEST_MODEL_DIR = "best_model"
 METADATA_FILENAME = "metadata.json"
 
 
-def refit_best_regressor() -> Path:
-    """Refit the best regressor on the full augmented frame; save to ``best_model/``."""
-    comparison_path = YARDS_GAINED_ARTIFACTS_DIR / MODEL_COMPARISON_FILENAME
+def refit_best_regressor(
+    *,
+    experiment_id: str | None = None,
+    play_type_experiment_id: str | None = None,
+    promote: bool = True,
+) -> Path:
+    """Refit the best regressor on the full augmented frame; save under experiment and ``best_model/``."""
+    exp_id = experiment_id or get_active_experiment("yards_gained")
+    if exp_id is None:
+        raise FileNotFoundError(
+            "No active yards_gained experiment. Run training first or pass experiment_id=..."
+        )
+
+    exp_config = read_experiment_config(exp_id)
+    play_type_exp = (
+        play_type_experiment_id
+        or exp_config.get("play_type_experiment")
+        or get_active_experiment("play_type")
+    )
+
+    artifacts_dir = resolve_task_artifacts_dir("yards_gained", experiment_id=exp_id)
+    comparison_path = artifacts_dir / MODEL_COMPARISON_FILENAME
     if not comparison_path.exists():
         raise FileNotFoundError(
             f"Run yards-gained training first: {comparison_path} not found"
@@ -43,7 +68,7 @@ def refit_best_regressor() -> Path:
         higher_is_better=False,
     )
 
-    X, y = build_augmented_yards_frame()
+    X, y = build_augmented_yards_frame(play_type_experiment_id=play_type_exp)
     impute_cols = yards_numeric_columns(X)
     X_fit = X.copy()
     if impute_cols:
@@ -54,21 +79,62 @@ def refit_best_regressor() -> Path:
     model = REGRESSOR_BUILDERS[best_model]()
     model.fit(X_fit, y)
 
-    out_dir = ensure_artifacts_dir("yards_gained") / BEST_MODEL_DIR
-    model_path = save_model(model, "yards_gained", subdir=BEST_MODEL_DIR)
+    model_path = save_model(model, "yards_gained", experiment_id=exp_id)
+    best_model_path = save_model(model, "yards_gained", to_best_model=True)
+    save_feature_importance(
+        model,
+        X.columns.tolist(),
+        "yards_gained",
+        experiment_id=exp_id,
+    )
+    save_feature_importance(
+        model,
+        X.columns.tolist(),
+        "yards_gained",
+        to_best_model=True,
+    )
 
     metadata = {
         "task": "yards_gained",
+        "experiment_id": exp_id,
+        "play_type_experiment": play_type_exp,
         "model_key": best_model,
         "seed": SEED,
         "n_rows": len(y),
         "n_features": X.shape[1],
-        "model_path": str(model_path.relative_to(YARDS_GAINED_ARTIFACTS_DIR)),
+        "model_path": str(model_path.name),
+        "best_model_path": str(best_model_path.name),
     }
-    metadata_path = out_dir / METADATA_FILENAME
-    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    for out_dir in (artifacts_dir, best_model_path.parent):
+        metadata_path = out_dir / METADATA_FILENAME
+        metadata_path.write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n"
+        )
 
-    return model_path
+    update_experiment_config(
+        exp_id,
+        {
+            "tasks": {
+                "yards_gained": {
+                    "best_model": best_model,
+                    "refit": metadata,
+                }
+            }
+        },
+    )
+
+    if promote:
+        promote_experiment_to_best_model(
+            "yards_gained",
+            exp_id,
+            source_files=[
+                MODEL_COMPARISON_FILENAME,
+                METADATA_FILENAME,
+                "feature_importance.csv",
+            ],
+        )
+
+    return best_model_path
 
 
 if __name__ == "__main__":

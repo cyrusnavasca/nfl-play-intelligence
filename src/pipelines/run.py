@@ -7,7 +7,7 @@ best-model persistence in a single command.
 Usage (from project root):
     python3 -m src.pipelines.run
     python3 -m src.pipelines.run --persist-best
-    python3 -m src.pipelines.run --skip-play-type
+    python3 -m src.pipelines.run --experiment log_transform_v1
 """
 from __future__ import annotations
 
@@ -18,12 +18,12 @@ from typing import Any
 import pandas as pd
 
 from src.data.schema import (
+    BEST_MODEL_DIR,
+    EXPERIMENTS_DIR,
     MODELING_ARTIFACTS_DIR,
     N_FOLDS,
-    PLAY_TYPE_ARTIFACTS_DIR,
     PLAY_TYPE_MODELING_PARQUET_PATH,
     SEED,
-    YARDS_GAINED_ARTIFACTS_DIR,
     YARDS_GAINED_MODELING_PARQUET_PATH,
     validate_modeling_parquet,
 )
@@ -39,34 +39,15 @@ from src.pipelines.yards_gained.train import (
     MODEL_COMPARISON_FILENAME as YARDS_GAINED_COMPARISON_FILENAME,
     train_yards_gained,
 )
-from src.utils.io import write_run_summary
+from src.utils.experiments import (
+    allocate_experiment_id,
+    resolve_task_artifacts_dir,
+    set_active_experiment,
+    update_experiment_config,
+    write_experiment_config,
+)
 
 __all__ = ["run_pipeline"]
-
-
-def _metric_snapshot(comparison: pd.DataFrame, model_key: str) -> dict[str, float]:
-    matches = comparison.loc[comparison["model"] == model_key]
-    if matches.empty:
-        raise KeyError(f"model {model_key!r} not in comparison table")
-    row = matches.iloc[0]
-    return {col: float(row[col]) for col in comparison.columns if col != "model"}
-
-
-def _task_summary(
-    comparison: pd.DataFrame,
-    *,
-    metric: str,
-    higher_is_better: bool,
-) -> dict[str, Any]:
-    best_model = select_best_model(
-        comparison,
-        metric,
-        higher_is_better=higher_is_better,
-    )
-    return {
-        "best_model": best_model,
-        "metrics": _metric_snapshot(comparison, best_model),
-    }
 
 
 def run_pipeline(
@@ -74,17 +55,33 @@ def run_pipeline(
     skip_play_type: bool = False,
     skip_yards_gained: bool = False,
     persist_best: bool = False,
+    experiment_id: str | None = None,
 ) -> dict[str, pd.DataFrame]:
     """
     Run the two-step modeling pipeline end to end.
 
     Order: validate parquets → play-type CV → OOF export → yards holdout →
-    ``run_summary.json``. When *persist_best* is True, refit and save both
+    experiment ``config.yaml``. When *persist_best* is True, refit and save both
     best estimators via each task's ``predict`` module.
+
+    All task artifacts for a run share one *experiment_id* under
+    ``artifacts/modeling/experiments/<id>/``.
     """
     started_at = datetime.now(timezone.utc).isoformat()
     results: dict[str, pd.DataFrame] = {}
 
+    exp_id = experiment_id or allocate_experiment_id()
+    write_experiment_config(
+        exp_id,
+        {
+            "started_at": started_at,
+            "seed": SEED,
+            "n_folds": N_FOLDS,
+            "pipeline": "src.pipelines.run",
+        },
+    )
+
+    print(f"Experiment:    {exp_id}")
     print("[1/5] Validating modeling parquets...")
     validate_modeling_parquet(PLAY_TYPE_MODELING_PARQUET_PATH, "play_type")
     validate_modeling_parquet(YARDS_GAINED_MODELING_PARQUET_PATH, "yards_gained")
@@ -92,67 +89,74 @@ def run_pipeline(
 
     if not skip_play_type:
         print("[2/5] Play-type cross-validation...")
-        results["play_type"] = train_play_type()
+        results["play_type"], _ = train_play_type(experiment_id=exp_id)
         print("[3/5] Exporting OOF pass probabilities...")
-        export_oof_predictions()
+        export_oof_predictions(experiment_id=exp_id)
     else:
         print("[2/5] Skipping play-type training")
         print("[3/5] Skipping OOF export")
-        comparison_path = PLAY_TYPE_ARTIFACTS_DIR / PLAY_TYPE_COMPARISON_FILENAME
+        comparison_path = (
+            resolve_task_artifacts_dir("play_type", experiment_id=exp_id)
+            / PLAY_TYPE_COMPARISON_FILENAME
+        )
         if comparison_path.exists():
             results["play_type"] = pd.read_csv(comparison_path)
 
     if not skip_yards_gained:
         print("[4/5] Yards-gained holdout evaluation...")
-        results["yards_gained"] = train_yards_gained()
+        results["yards_gained"], _ = train_yards_gained(
+            experiment_id=exp_id,
+            play_type_experiment_id=exp_id if not skip_play_type else None,
+        )
     else:
         print("[4/5] Skipping yards-gained training")
-        comparison_path = YARDS_GAINED_ARTIFACTS_DIR / YARDS_GAINED_COMPARISON_FILENAME
+        comparison_path = (
+            resolve_task_artifacts_dir("yards_gained", experiment_id=exp_id)
+            / YARDS_GAINED_COMPARISON_FILENAME
+        )
         if comparison_path.exists():
             results["yards_gained"] = pd.read_csv(comparison_path)
 
-    summary: dict[str, Any] = {
-        "started_at": started_at,
-        "seed": SEED,
-        "n_folds": N_FOLDS,
+    config_patch: dict[str, Any] = {
         "skipped": {
             "play_type": skip_play_type,
             "yards_gained": skip_yards_gained,
         },
+        "persisted_best": persist_best,
     }
-
-    if "play_type" in results:
-        summary["play_type"] = _task_summary(
-            results["play_type"],
-            metric="roc_auc",
-            higher_is_better=True,
-        )
-    if "yards_gained" in results:
-        summary["yards_gained"] = _task_summary(
-            results["yards_gained"],
-            metric="rmse",
-            higher_is_better=False,
-        )
+    if not skip_yards_gained and not skip_play_type:
+        config_patch["play_type_experiment"] = exp_id
 
     if persist_best:
         print("[5/5] Persisting best models...")
         if "play_type" in results:
-            refit_best_classifier()
+            refit_best_classifier(experiment_id=exp_id)
         if "yards_gained" in results:
-            refit_best_regressor()
-        summary["persisted_best"] = True
+            refit_best_regressor(
+                experiment_id=exp_id,
+                play_type_experiment_id=exp_id if not skip_play_type else None,
+            )
     else:
         print("[5/5] Skipping best-model persistence (use --persist-best to save)")
-        summary["persisted_best"] = False
 
-    summary_path = write_run_summary(summary)
-    print(f"\nRun summary → {summary_path}")
+    update_experiment_config(exp_id, config_patch)
+
+    if "play_type" in results:
+        set_active_experiment("play_type", exp_id)
+    if "yards_gained" in results:
+        set_active_experiment("yards_gained", exp_id)
+
+    print(f"\nExperiment config → {EXPERIMENTS_DIR / exp_id / 'config.yaml'}")
     return results
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run end-to-end NFL play modeling pipeline",
+    )
+    parser.add_argument(
+        "--experiment",
+        help="Experiment id for this run (default: next exp_NNN)",
     )
     parser.add_argument(
         "--persist-best",
@@ -178,31 +182,34 @@ def main() -> dict[str, pd.DataFrame]:
         skip_play_type=args.skip_play_type,
         skip_yards_gained=args.skip_yards_gained,
         persist_best=args.persist_best,
+        experiment_id=args.experiment,
     )
 
     print("\n=== Modeling pipeline complete ===")
     if "play_type" in results:
-        play_summary = _task_summary(
-            results["play_type"],
-            metric="roc_auc",
+        comparison = results["play_type"]
+        best_model = select_best_model(
+            comparison,
+            "roc_auc",
             higher_is_better=True,
         )
-        metrics = play_summary["metrics"]
-        print(
-            f"Play type:     best={play_summary['best_model']}  "
-            f"roc_auc={metrics['roc_auc_mean']:.4f}"
+        roc_auc = float(
+            comparison.loc[comparison["model"] == best_model, "roc_auc_mean"].iloc[0]
         )
+        print(f"Play type:     best={best_model}  roc_auc={roc_auc:.4f}")
     if "yards_gained" in results:
-        yards_summary = _task_summary(
-            results["yards_gained"],
-            metric="rmse",
+        comparison = results["yards_gained"]
+        best_model = select_best_model(
+            comparison,
+            "rmse",
             higher_is_better=False,
         )
-        metrics = yards_summary["metrics"]
-        print(
-            f"Yards gained:  best={yards_summary['best_model']}  "
-            f"rmse={metrics['rmse_mean']:.4f}"
+        rmse = float(
+            comparison.loc[comparison["model"] == best_model, "rmse_mean"].iloc[0]
         )
+        print(f"Yards gained:  best={best_model}  rmse={rmse:.4f}")
+    print(f"Experiments:   {EXPERIMENTS_DIR}")
+    print(f"Best models:   {BEST_MODEL_DIR}")
     print(f"Artifacts:     {MODELING_ARTIFACTS_DIR}")
 
     return results

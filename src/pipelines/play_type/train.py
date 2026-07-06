@@ -5,17 +5,26 @@ Wires data loaders, model builders, and shared evaluation into artifacts.
 
 Usage (from project root):
     python3 -m src.pipelines.play_type.train
+    python3 -m src.pipelines.play_type.train --experiment log_loss_v2
 """
 from __future__ import annotations
+
+import argparse
 
 import numpy as np
 import pandas as pd
 
 from src.data.loaders import load_play_type_dataset
-from src.data.schema import N_FOLDS, PLAY_TYPE_ARTIFACTS_DIR, SEED
+from src.data.schema import N_FOLDS, SEED
 from src.evaluation.cross_validation import cross_validate_classifier, stratified_folds
 from src.evaluation.model_selection import summarize_cv_results
 from src.models import CLASSIFIER_BUILDERS
+from src.utils.experiments import (
+    allocate_experiment_id,
+    build_task_result_config,
+    set_active_experiment,
+    update_experiment_config,
+)
 from src.utils.io import ensure_artifacts_dir, write_cv_results
 
 __all__ = ["run_play_type_cross_validation", "train_play_type"]
@@ -61,20 +70,53 @@ def run_play_type_cross_validation() -> tuple[
     return records, oof_by_model, comparison
 
 
-def train_play_type() -> pd.DataFrame:
-    """Run play-type CV, write ``cv_results.csv`` and ``model_comparison.csv``."""
+def train_play_type(*, experiment_id: str | None = None) -> tuple[pd.DataFrame, str]:
+    """Run play-type CV and write artifacts under ``experiments/<id>/play_type/``."""
+    exp_id = experiment_id or allocate_experiment_id()
+    update_experiment_config(
+        exp_id,
+        {
+            "seed": SEED,
+            "n_folds": N_FOLDS,
+        },
+    )
+
     records, _, comparison = run_play_type_cross_validation()
 
-    write_cv_results(records, "play_type")
-    out_dir = ensure_artifacts_dir("play_type")
+    write_cv_results(records, "play_type", experiment_id=exp_id)
+    out_dir = ensure_artifacts_dir("play_type", experiment_id=exp_id)
     comparison_path = out_dir / MODEL_COMPARISON_FILENAME
     comparison.to_csv(comparison_path, index=False)
 
-    return comparison
+    set_active_experiment("play_type", exp_id)
+    update_experiment_config(
+        exp_id,
+        {
+            "tasks": {
+                "play_type": build_task_result_config(
+                    "play_type",
+                    comparison,
+                    metric="roc_auc",
+                    higher_is_better=True,
+                ),
+            }
+        },
+    )
+
+    return comparison, exp_id
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run play-type model comparison CV")
+    parser.add_argument(
+        "--experiment",
+        help="Experiment id (default: next exp_NNN)",
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    comparison_df = train_play_type()
-    out_path = PLAY_TYPE_ARTIFACTS_DIR / MODEL_COMPARISON_FILENAME
-    print(f"Play-type CV complete → {out_path}")
+    args = _parse_args()
+    comparison_df, exp_id = train_play_type(experiment_id=args.experiment)
+    print(f"Play-type CV complete → experiments/{exp_id}/play_type/{MODEL_COMPARISON_FILENAME}")
     print(comparison_df.to_string(index=False))

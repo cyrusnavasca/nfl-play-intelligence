@@ -11,3 +11,4 @@ lightgbm
 scipy
 statsmodels
 pytest
+pyyaml
