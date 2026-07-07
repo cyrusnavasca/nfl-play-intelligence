@@ -1,14 +1,26 @@
+# Core data & I/O
 pandas
 numpy
 pyarrow
-matplotlib
-seaborn
+pyyaml
+
+# Modeling
 scikit-learn
-jupyter
-nfl_data_py
 xgboost
 lightgbm
 scipy
+joblib
+
+# Selection / stats (notebooks + feature selection)
 statsmodels
+
+# Ingestion
+nfl_data_py
+
+# Notebooks & viz
+jupyter
+matplotlib
+seaborn
+
+# Tests (tests/evaluation/test_feature_importance.py: numpy, pytest, scikit-learn, pandas)
 pytest
-pyyaml
