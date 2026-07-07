@@ -39,9 +39,8 @@ def test_play_type_cv_smoke_on_subsample(play_type_subsample, monkeypatch) -> No
         "src.pipelines.play_type.train.load_play_type_dataset",
         lambda: (X, y),
     )
-    monkeypatch.setattr("src.pipelines.play_type.train.N_FOLDS", 2)
 
-    records, oof_by_model, comparison = run_play_type_cross_validation()
+    records, oof_by_model, comparison = run_play_type_cross_validation(n_folds=2)
 
     assert len(comparison) == len(CLASSIFIER_BUILDERS)
     assert len(records) == len(CLASSIFIER_BUILDERS) * 2

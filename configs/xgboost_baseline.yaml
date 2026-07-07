@@ -1,0 +1,45 @@
+name: xgboost_baseline
+description: Production-like XGB settings; compare baseline, random forest, and xgboost on both tasks
+
+seed: 42
+n_folds: 5
+persist_best: false
+
+tasks:
+  play_type:
+    models:
+      baseline:
+        strategy: prior
+      random_forest:
+        n_estimators: 300
+        min_samples_leaf: 5
+        class_weight: balanced
+        random_state: 42
+        n_jobs: -1
+      xgboost:
+        n_estimators: 300
+        max_depth: 6
+        learning_rate: 0.05
+        subsample: 0.8
+        colsample_bytree: 0.8
+        eval_metric: logloss
+        random_state: 42
+        verbosity: 0
+
+  yards_gained:
+    models:
+      baseline:
+        strategy: mean
+      random_forest:
+        n_estimators: 300
+        min_samples_leaf: 5
+        random_state: 42
+        n_jobs: -1
+      xgboost:
+        n_estimators: 300
+        max_depth: 6
+        learning_rate: 0.05
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        verbosity: 0

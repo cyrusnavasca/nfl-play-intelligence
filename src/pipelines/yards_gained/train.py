@@ -18,11 +18,13 @@ import pandas as pd
 from src.data.loaders import load_yards_gained_dataset, yards_numeric_columns
 from src.data.schema import SEED, TARGET_REG, TASK2_GENERATED_FEATURES
 from src.evaluation.cross_validation import _impute_columns_train_test
+from src.evaluation.feature_importance import save_feature_importance
 from src.evaluation.metrics import regression_metrics
 from src.evaluation.model_selection import select_best_model, summarize_cv_results
-from src.models import REGRESSOR_BUILDERS
+from src.models import iter_regressor_builders
 from src.pipelines.play_type.oof import get_best_oof_proba
 from src.preprocessing.split_data import train_test_split_frame
+from src.utils.experiment_profile import get_active_profile_or_none
 from src.utils.experiments import (
     allocate_experiment_id,
     build_task_result_config,
@@ -74,6 +76,7 @@ def build_augmented_yards_frame(
 def run_yards_gained_holdout(
     *,
     play_type_experiment_id: str | None = None,
+    experiment_id: str | None = None,
 ) -> tuple[
     list[dict],
     pd.DataFrame,
@@ -81,7 +84,7 @@ def run_yards_gained_holdout(
     pd.DataFrame,
 ]:
     """
-    Train all registered regressors on 80% and score on 20% holdout.
+    Train profile regressors on 80% and score on 20% holdout.
 
     Returns holdout records, comparison summary, holdout results table, and
     test predictions (one row per holdout play).
@@ -98,7 +101,7 @@ def run_yards_gained_holdout(
     records: list[dict] = []
     test_preds: dict[str, np.ndarray] = {}
 
-    for model_key, builder in REGRESSOR_BUILDERS.items():
+    for model_key, builder in iter_regressor_builders():
         X_train_imp, X_test_imp = _impute_columns_train_test(
             X_train,
             X_test,
@@ -109,6 +112,15 @@ def run_yards_gained_holdout(
         model.fit(X_train_imp, y_train)
         y_pred = model.predict(X_test_imp)
         test_preds[model_key] = np.asarray(y_pred, dtype=float)
+
+        if experiment_id:
+            save_feature_importance(
+                model,
+                X.columns.tolist(),
+                "yards_gained",
+                model_key,
+                experiment_id=experiment_id,
+            )
 
         metrics = regression_metrics(y_test, y_pred)
         records.append({"model": model_key, **metrics})
@@ -129,17 +141,27 @@ def train_yards_gained(
     play_type_experiment_id: str | None = None,
 ) -> tuple[pd.DataFrame, str]:
     """Run holdout evaluation and write yards-gained experiment artifacts."""
+    profile = get_active_profile_or_none()
     exp_id = experiment_id or allocate_experiment_id()
-    update_experiment_config(
-        exp_id,
-        {
-            "seed": SEED,
-            "play_type_experiment": play_type_experiment_id,
-        },
-    )
+    play_type_exp = play_type_experiment_id
+    if play_type_exp is None and profile is not None:
+        play_type_exp = profile.play_type_experiment
+
+    config_patch: dict[str, object] = {
+        "seed": profile.seed if profile else SEED,
+        "play_type_experiment": play_type_exp,
+    }
+    if profile is not None:
+        config_patch["name"] = profile.name
+        if profile.description:
+            config_patch["description"] = profile.description
+        if profile.source_path is not None:
+            config_patch["profile"] = str(profile.source_path)
+    update_experiment_config(exp_id, config_patch)
 
     _, comparison, holdout_df, pred_frame = run_yards_gained_holdout(
-        play_type_experiment_id=play_type_experiment_id,
+        play_type_experiment_id=play_type_exp,
+        experiment_id=exp_id,
     )
 
     out_dir = ensure_artifacts_dir("yards_gained", experiment_id=exp_id)
@@ -148,6 +170,7 @@ def train_yards_gained(
     pred_frame.to_parquet(out_dir / TEST_PREDICTIONS_FILENAME, index=False)
 
     set_active_experiment("yards_gained", exp_id)
+    models_config = profile.task_models_config("yards_gained") if profile else None
     update_experiment_config(
         exp_id,
         {
@@ -157,6 +180,8 @@ def train_yards_gained(
                     comparison,
                     metric="rmse",
                     higher_is_better=False,
+                    experiment_id=exp_id,
+                    models_config=models_config,
                 ),
             }
         },
@@ -179,11 +204,14 @@ def _parse_args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
+    from src.utils.experiment_profile import DEFAULT_PROFILE_PATH, load_experiment_profile, use_experiment_profile
+
     args = _parse_args()
-    comparison_df, exp_id = train_yards_gained(
-        experiment_id=args.experiment,
-        play_type_experiment_id=args.play_type_experiment,
-    )
+    with use_experiment_profile(load_experiment_profile(DEFAULT_PROFILE_PATH)):
+        comparison_df, exp_id = train_yards_gained(
+            experiment_id=args.experiment,
+            play_type_experiment_id=args.play_type_experiment,
+        )
     out_path = task_experiment_dir(exp_id, "yards_gained") / MODEL_COMPARISON_FILENAME
     print(f"Yards-gained holdout complete → {out_path}")
     best_model = select_best_model(

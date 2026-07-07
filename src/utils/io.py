@@ -20,7 +20,6 @@ from src.utils.experiments import (
 
 __all__ = [
     "ensure_artifacts_dir",
-    "save_feature_importance",
     "save_model",
     "write_cv_results",
 ]
@@ -56,40 +55,6 @@ def save_model(
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / filename
     joblib.dump(model, out_path)
-    return out_path
-
-
-def save_feature_importance(
-    model: BaseEstimator,
-    feature_names: list[str],
-    task: ModelingTask,
-    *,
-    experiment_id: str | None = None,
-    to_best_model: bool = False,
-    filename: str = "feature_importance.csv",
-) -> Path | None:
-    """Write feature importances when the estimator exposes them."""
-    if not hasattr(model, "feature_importances_"):
-        return None
-
-    importances = getattr(model, "feature_importances_")
-    frame = pd.DataFrame(
-        {
-            "feature": feature_names,
-            "importance": importances,
-        }
-    ).sort_values("importance", ascending=False)
-
-    if to_best_model:
-        out_dir = best_model_task_dir(task)
-    elif experiment_id:
-        out_dir = task_experiment_dir(experiment_id, task)
-    else:
-        out_dir = resolve_task_artifacts_dir(task)
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / filename
-    frame.to_csv(out_path, index=False)
     return out_path
 
 

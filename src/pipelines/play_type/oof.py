@@ -130,7 +130,10 @@ def get_best_oof_proba(
 
 
 if __name__ == "__main__":
-    oof_df = export_oof_predictions()
+    from src.utils.experiment_profile import DEFAULT_PROFILE_PATH, load_experiment_profile, use_experiment_profile
+
+    with use_experiment_profile(load_experiment_profile(DEFAULT_PROFILE_PATH)):
+        oof_df = export_oof_predictions()
     artifacts_dir = resolve_task_artifacts_dir("play_type")
     out_path = artifacts_dir / OOF_PREDICTIONS_FILENAME
     print(f"OOF export complete → {out_path}")

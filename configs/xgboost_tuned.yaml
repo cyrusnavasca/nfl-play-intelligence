@@ -1,0 +1,34 @@
+name: xgboost_tuned
+description: Deeper XGBoost variant for the next iteration; compare against baseline only
+
+seed: 42
+n_folds: 5
+persist_best: false
+
+tasks:
+  play_type:
+    models:
+      baseline:
+        strategy: prior
+      xgboost:
+        n_estimators: 500
+        max_depth: 8
+        learning_rate: 0.03
+        subsample: 0.8
+        colsample_bytree: 0.8
+        eval_metric: logloss
+        random_state: 42
+        verbosity: 0
+
+  yards_gained:
+    models:
+      baseline:
+        strategy: mean
+      xgboost:
+        n_estimators: 500
+        max_depth: 8
+        learning_rate: 0.03
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        verbosity: 0

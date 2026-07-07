@@ -20,31 +20,6 @@ from src.utils.experiments import (
 )
 
 
-@pytest.fixture
-def experiment_dirs(tmp_path, monkeypatch):
-    modeling_dir = tmp_path / "artifacts" / "modeling"
-    monkeypatch.setattr(
-        "src.utils.experiments.MODELING_ARTIFACTS_DIR",
-        modeling_dir,
-    )
-    monkeypatch.setattr(
-        "src.utils.experiments.EXPERIMENTS_DIR",
-        modeling_dir / "experiments",
-    )
-    monkeypatch.setattr(
-        "src.utils.experiments.BEST_MODEL_DIR",
-        modeling_dir / "best_model",
-    )
-    monkeypatch.setattr(
-        "src.utils.experiments._LEGACY_TASK_DIRS",
-        {
-            "play_type": modeling_dir / "play_type",
-            "yards_gained": modeling_dir / "yards_gained",
-        },
-    )
-    return modeling_dir
-
-
 def test_allocate_experiment_id_auto_increments(experiment_dirs) -> None:
     first = allocate_experiment_id()
     second = allocate_experiment_id()

@@ -14,8 +14,13 @@ from sklearn.impute import SimpleImputer
 
 from src.data.loaders import yards_numeric_columns
 from src.data.schema import SEED
+from src.evaluation.feature_importance import (
+    FEATURE_IMPORTANCE_DIRNAME,
+    feature_importance_relpath,
+    save_feature_importance,
+)
 from src.evaluation.model_selection import select_best_model
-from src.models import REGRESSOR_BUILDERS
+from src.models import REGRESSOR_BUILDERS, hyperparameters_from_experiment_config
 from src.pipelines.yards_gained.train import (
     MODEL_COMPARISON_FILENAME,
     build_augmented_yards_frame,
@@ -27,7 +32,7 @@ from src.utils.experiments import (
     resolve_task_artifacts_dir,
     update_experiment_config,
 )
-from src.utils.io import save_feature_importance, save_model
+from src.utils.io import save_model
 
 __all__ = ["refit_best_regressor"]
 
@@ -76,7 +81,12 @@ def refit_best_regressor(
             X_fit[impute_cols]
         )
 
-    model = REGRESSOR_BUILDERS[best_model]()
+    hyperparameters = hyperparameters_from_experiment_config(
+        exp_config,
+        "yards_gained",
+        best_model,
+    )
+    model = REGRESSOR_BUILDERS[best_model](hyperparameters=hyperparameters)
     model.fit(X_fit, y)
 
     model_path = save_model(model, "yards_gained", experiment_id=exp_id)
@@ -85,12 +95,14 @@ def refit_best_regressor(
         model,
         X.columns.tolist(),
         "yards_gained",
+        best_model,
         experiment_id=exp_id,
     )
     save_feature_importance(
         model,
         X.columns.tolist(),
         "yards_gained",
+        best_model,
         to_best_model=True,
     )
 
@@ -104,6 +116,7 @@ def refit_best_regressor(
         "n_features": X.shape[1],
         "model_path": str(model_path.name),
         "best_model_path": str(best_model_path.name),
+        "feature_importance": feature_importance_relpath(best_model),
     }
     for out_dir in (artifacts_dir, best_model_path.parent):
         metadata_path = out_dir / METADATA_FILENAME
@@ -130,7 +143,7 @@ def refit_best_regressor(
             source_files=[
                 MODEL_COMPARISON_FILENAME,
                 METADATA_FILENAME,
-                "feature_importance.csv",
+                FEATURE_IMPORTANCE_DIRNAME,
             ],
         )
 

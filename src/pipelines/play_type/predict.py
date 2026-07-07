@@ -13,16 +13,22 @@ import pandas as pd
 
 from src.data.loaders import load_play_type_dataset
 from src.data.schema import SEED
+from src.evaluation.feature_importance import (
+    FEATURE_IMPORTANCE_DIRNAME,
+    feature_importance_relpath,
+    save_feature_importance,
+)
 from src.evaluation.model_selection import select_best_model
-from src.models import CLASSIFIER_BUILDERS
+from src.models import CLASSIFIER_BUILDERS, hyperparameters_from_experiment_config
 from src.pipelines.play_type.train import MODEL_COMPARISON_FILENAME
 from src.utils.experiments import (
     get_active_experiment,
     promote_experiment_to_best_model,
+    read_experiment_config,
     resolve_task_artifacts_dir,
     update_experiment_config,
 )
-from src.utils.io import save_feature_importance, save_model
+from src.utils.io import save_model
 
 __all__ = ["refit_best_classifier"]
 
@@ -56,7 +62,13 @@ def refit_best_classifier(
     )
 
     X, y = load_play_type_dataset()
-    model = CLASSIFIER_BUILDERS[best_model]()
+    exp_config = read_experiment_config(exp_id)
+    hyperparameters = hyperparameters_from_experiment_config(
+        exp_config,
+        "play_type",
+        best_model,
+    )
+    model = CLASSIFIER_BUILDERS[best_model](hyperparameters=hyperparameters)
     model.fit(X, y)
 
     model_path = save_model(model, "play_type", experiment_id=exp_id)
@@ -65,12 +77,14 @@ def refit_best_classifier(
         model,
         X.columns.tolist(),
         "play_type",
+        best_model,
         experiment_id=exp_id,
     )
     save_feature_importance(
         model,
         X.columns.tolist(),
         "play_type",
+        best_model,
         to_best_model=True,
     )
 
@@ -83,6 +97,7 @@ def refit_best_classifier(
         "n_features": X.shape[1],
         "model_path": str(model_path.name),
         "best_model_path": str(best_model_path.name),
+        "feature_importance": feature_importance_relpath(best_model),
     }
     for out_dir in (artifacts_dir, best_model_path.parent):
         metadata_path = out_dir / METADATA_FILENAME
@@ -109,7 +124,7 @@ def refit_best_classifier(
             source_files=[
                 MODEL_COMPARISON_FILENAME,
                 METADATA_FILENAME,
-                "feature_importance.csv",
+                FEATURE_IMPORTANCE_DIRNAME,
             ],
         )
 

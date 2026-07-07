@@ -36,6 +36,7 @@ def test_build_task_result_config_shape() -> None:
         comparison,
         metric="roc_auc",
         higher_is_better=True,
+        experiment_id="exp_001",
     )
     assert task_cfg["best_model"] == "xgboost"
     assert task_cfg["roc_auc"] == pytest.approx(0.81)

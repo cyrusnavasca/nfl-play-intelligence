@@ -9,9 +9,11 @@ Layout::
     │   │   ├── config.yaml
     │   │   ├── play_type/
     │   │   │   ├── cv_results.csv
+    │   │   │   ├── feature_importance/
     │   │   │   ├── model_comparison.csv
     │   │   │   └── oof_predictions.parquet
     │   │   └── yards_gained/
+    │   │       ├── feature_importance/
     │   │       ├── holdout_results.csv
     │   │       ├── model_comparison.csv
     │   │       └── test_predictions.parquet
@@ -42,8 +44,17 @@ from src.data.schema import (
     YARDS_GAINED_ARTIFACTS_DIR,
     ModelingTask,
 )
+from src.evaluation.feature_importance import (
+    FEATURE_IMPORTANCE_DIRNAME,
+    enrich_models_snapshot,
+)
 from src.evaluation.model_selection import select_best_model
 from src.models.config import snapshot_task_hyperparameters
+from src.utils.experiment_profile import (
+    DEFAULT_PROFILE_PATH,
+    load_experiment_profile,
+    use_experiment_profile,
+)
 
 __all__ = [
     "ACTIVE_EXPERIMENTS_FILENAME",
@@ -85,7 +96,6 @@ _LEGACY_TASK_ARTIFACTS: dict[ModelingTask, tuple[str, ...]] = {
         "oof_predictions.parquet",
         "model.joblib",
         "metadata.json",
-        "feature_importance.csv",
     ),
     "yards_gained": (
         "holdout_results.csv",
@@ -93,7 +103,6 @@ _LEGACY_TASK_ARTIFACTS: dict[ModelingTask, tuple[str, ...]] = {
         "test_predictions.parquet",
         "model.joblib",
         "metadata.json",
-        "feature_importance.csv",
     ),
 }
 
@@ -228,12 +237,14 @@ def build_task_result_config(
     *,
     metric: str,
     higher_is_better: bool,
+    experiment_id: str | None = None,
+    models_config: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Build a task block for experiment ``config.yaml``.
 
-    Includes ``best_model``, the primary metric scalar, and a hyperparameter
-    snapshot for every registry model key.
+    Includes ``best_model``, the primary metric scalar, and per-model snapshots
+    (hyperparameters plus ``feature_importance`` paths when present).
     """
     best_model = select_best_model(
         comparison,
@@ -244,10 +255,13 @@ def build_task_result_config(
     metric_value = float(
         comparison.loc[comparison["model"] == best_model, mean_col].iloc[0]
     )
+    models = snapshot_task_hyperparameters(task, models_config=models_config)
+    if experiment_id:
+        models = enrich_models_snapshot(task, experiment_id, models)
     return {
         "best_model": best_model,
         metric: metric_value,
-        "models": snapshot_task_hyperparameters(task),
+        "models": models,
     }
 
 
@@ -309,8 +323,18 @@ def promote_experiment_to_best_model(
     if source_files:
         for filename in source_files:
             src = src_dir / filename
-            if src.exists():
+            if src.is_dir():
+                shutil.copytree(src, dst_dir / filename, dirs_exist_ok=True)
+            elif src.exists():
                 shutil.copy2(src, dst_dir / filename)
+
+    fi_src = src_dir / FEATURE_IMPORTANCE_DIRNAME
+    if fi_src.is_dir() and any(fi_src.iterdir()):
+        shutil.copytree(
+            fi_src,
+            dst_dir / FEATURE_IMPORTANCE_DIRNAME,
+            dirs_exist_ok=True,
+        )
 
     pointer = {
         "task": task,
@@ -329,6 +353,12 @@ def _legacy_has_artifacts(task: ModelingTask) -> bool:
     for name in _LEGACY_TASK_ARTIFACTS[task]:
         if (legacy / name).exists():
             return True
+    if (legacy / FEATURE_IMPORTANCE_DIRNAME).is_dir() and any(
+        (legacy / FEATURE_IMPORTANCE_DIRNAME).iterdir()
+    ):
+        return True
+    if (legacy / "feature_importance.csv").exists():
+        return True
     legacy_best = legacy / BEST_MODEL_DIRNAME
     return legacy_best.exists() and any(legacy_best.iterdir())
 
@@ -365,6 +395,30 @@ def migrate_legacy_artifacts(
                 shutil.move(str(src), str(dst / filename))
                 migrated[task].append(filename)
 
+        legacy_fi_dir = legacy / FEATURE_IMPORTANCE_DIRNAME
+        if legacy_fi_dir.is_dir() and any(legacy_fi_dir.iterdir()):
+            dst_fi = dst / FEATURE_IMPORTANCE_DIRNAME
+            dst_fi.mkdir(parents=True, exist_ok=True)
+            for item in legacy_fi_dir.iterdir():
+                shutil.move(str(item), str(dst_fi / item.name))
+            migrated[task].append(f"{FEATURE_IMPORTANCE_DIRNAME}/")
+
+        legacy_fi_file = legacy / "feature_importance.csv"
+        if legacy_fi_file.exists():
+            model_key = "xgboost"
+            metadata_path = legacy / "metadata.json"
+            if metadata_path.exists():
+                model_key = str(
+                    json.loads(metadata_path.read_text()).get("model_key", model_key)
+                )
+            dst_fi = dst / FEATURE_IMPORTANCE_DIRNAME
+            dst_fi.mkdir(parents=True, exist_ok=True)
+            shutil.move(
+                str(legacy_fi_file),
+                str(dst_fi / f"{model_key}.csv"),
+            )
+            migrated[task].append(f"{FEATURE_IMPORTANCE_DIRNAME}/{model_key}.csv")
+
         legacy_best = legacy / BEST_MODEL_DIRNAME
         if legacy_best.exists():
             promoted = best_model_task_dir(task)
@@ -393,22 +447,26 @@ def migrate_legacy_artifacts(
         "n_folds": 5,
         "tasks": {},
     }
-    for task, metric, higher_is_better in (
-        ("play_type", "roc_auc", True),
-        ("yards_gained", "rmse", False),
-    ):
-        comparison_path = (
-            task_experiment_dir(experiment_id, task) / "model_comparison.csv"
-        )
-        if not comparison_path.exists():
-            continue
-        comparison = pd.read_csv(comparison_path)
-        config["tasks"][task] = build_task_result_config(
-            task,
-            comparison,
-            metric=metric,
-            higher_is_better=higher_is_better,
-        )
+    profile = load_experiment_profile(DEFAULT_PROFILE_PATH)
+    with use_experiment_profile(profile):
+        for task, metric, higher_is_better in (
+            ("play_type", "roc_auc", True),
+            ("yards_gained", "rmse", False),
+        ):
+            comparison_path = (
+                task_experiment_dir(experiment_id, task) / "model_comparison.csv"
+            )
+            if not comparison_path.exists():
+                continue
+            comparison = pd.read_csv(comparison_path)
+            config["tasks"][task] = build_task_result_config(
+                task,
+                comparison,
+                metric=metric,
+                higher_is_better=higher_is_better,
+                experiment_id=experiment_id,
+                models_config=profile.task_models_config(task),
+            )
     write_experiment_config(experiment_id, config)
 
     for task in ("play_type", "yards_gained"):
