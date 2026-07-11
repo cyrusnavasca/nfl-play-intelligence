@@ -51,6 +51,18 @@ def test_models_do_not_import_evaluation(module_path: Path) -> None:
             )
 
 
+@pytest.mark.parametrize(
+    "module_path",
+    _module_paths("inference"),
+    ids=lambda p: str(p.relative_to(SRC_ROOT)),
+)
+def test_inference_does_not_import_pipelines(module_path: Path) -> None:
+    assert not _imports_from_pipelines(module_path), (
+        f"{module_path} must not import pipelines: "
+        f"{_imports_from_pipelines(module_path)}"
+    )
+
+
 def test_play_type_train_delegates_cv_to_evaluation() -> None:
     from src.pipelines.play_type import train as play_train
 

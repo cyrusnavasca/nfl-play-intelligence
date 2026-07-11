@@ -47,6 +47,55 @@ def test_validate_rejects_unknown_model_key() -> None:
         )
 
 
+def test_validate_rejects_unknown_target_transform() -> None:
+    with pytest.raises(ValueError, match="unknown target_transform"):
+        validate_experiment_profile(
+            {
+                "tasks": {
+                    "yards_gained": {
+                        "target_transform": "sqrt",
+                        "models": {
+                            "baseline": {"strategy": "mean"},
+                        },
+                    }
+                }
+            }
+        )
+
+
+def test_validate_rejects_target_transform_on_play_type() -> None:
+    with pytest.raises(ValueError, match="does not support"):
+        validate_experiment_profile(
+            {
+                "tasks": {
+                    "play_type": {
+                        "target_transform": "log",
+                        "models": {
+                            "baseline": {"strategy": "prior"},
+                        },
+                    }
+                }
+            }
+        )
+
+
+def test_load_profile_with_target_transform(tmp_path: Path) -> None:
+    profile_path = tmp_path / "log_profile.yaml"
+    profile_path.write_text(
+        """
+name: log_trial
+tasks:
+  yards_gained:
+    target_transform: log
+    models:
+      baseline:
+        strategy: mean
+"""
+    )
+    profile = load_experiment_profile(profile_path)
+    assert profile.task_target_transform("yards_gained") == "log"
+
+
 def test_use_experiment_profile_context() -> None:
     profile = load_experiment_profile(DEFAULT_PROFILE_PATH)
     from src.models.config import load_model_hyperparameters

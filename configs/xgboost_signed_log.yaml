@@ -1,0 +1,30 @@
+name: xgboost_signed_log
+description: Yards XGB with MSE objective and signed-log target transform; reuse exp_001 play-type OOF
+
+seed: 42
+n_folds: 5
+persist_best: false
+
+play_type_experiment: exp_001
+
+tasks:
+  yards_gained:
+    target_transform: signed_log
+    models:
+      baseline:
+        strategy: mean
+      random_forest:
+        n_estimators: 300
+        min_samples_leaf: 5
+        random_state: 42
+        n_jobs: -1
+      xgboost:
+        objective: reg:squarederror
+        eval_metric: rmse
+        n_estimators: 300
+        max_depth: 6
+        learning_rate: 0.05
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        verbosity: 0

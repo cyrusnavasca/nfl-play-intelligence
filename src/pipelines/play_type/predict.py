@@ -1,5 +1,5 @@
 """
-Full-data refit for the best play-type classifier (inference stub).
+Full-data refit for the best play-type classifier.
 
 Usage (from project root):
     python3 -m src.pipelines.play_type.predict

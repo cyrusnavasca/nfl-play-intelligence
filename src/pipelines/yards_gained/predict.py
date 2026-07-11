@@ -1,5 +1,8 @@
 """
-Full-data refit for the best yards-gained regressor (inference stub).
+Full-data refit for the best yards-gained regressor.
+
+Persists ``model.joblib``, ``target_transform.joblib``, and ``imputer.joblib``
+for downstream inference via :mod:`src.inference.predict`.
 
 Usage (from project root):
     python3 -m src.pipelines.yards_gained.predict
@@ -23,6 +26,7 @@ from src.evaluation.model_selection import select_best_model
 from src.models import REGRESSOR_BUILDERS, hyperparameters_from_experiment_config
 from src.pipelines.yards_gained.train import (
     MODEL_COMPARISON_FILENAME,
+    TARGET_TRANSFORM_FILENAME,
     build_augmented_yards_frame,
 )
 from src.utils.experiments import (
@@ -32,11 +36,28 @@ from src.utils.experiments import (
     resolve_task_artifacts_dir,
     update_experiment_config,
 )
-from src.utils.io import save_model
+from src.utils.io import (
+    FEATURE_IMPUTER_FILENAME,
+    load_target_transform,
+    save_feature_imputer,
+    save_model,
+    save_target_transform,
+)
 
 __all__ = ["refit_best_regressor"]
 
 METADATA_FILENAME = "metadata.json"
+
+
+def _load_target_transform(*, experiment_id: str):
+    artifacts_dir = resolve_task_artifacts_dir("yards_gained", experiment_id=experiment_id)
+    transform_path = artifacts_dir / TARGET_TRANSFORM_FILENAME
+    if not transform_path.exists():
+        raise FileNotFoundError(
+            f"Missing target transform artifact: {transform_path}. "
+            "Run yards-gained training first."
+        )
+    return load_target_transform(transform_path)
 
 
 def refit_best_regressor(
@@ -76,10 +97,14 @@ def refit_best_regressor(
     X, y = build_augmented_yards_frame(play_type_experiment_id=play_type_exp)
     impute_cols = yards_numeric_columns(X)
     X_fit = X.copy()
+    imputer = SimpleImputer(strategy="median")
     if impute_cols:
-        X_fit[impute_cols] = SimpleImputer(strategy="median").fit_transform(
-            X_fit[impute_cols]
-        )
+        X_fit[impute_cols] = imputer.fit_transform(X_fit[impute_cols])
+    else:
+        imputer.fit(X_fit.iloc[:, :0])
+
+    target_transform = _load_target_transform(experiment_id=exp_id)
+    y_model = target_transform.transform(y)
 
     hyperparameters = hyperparameters_from_experiment_config(
         exp_config,
@@ -87,10 +112,34 @@ def refit_best_regressor(
         best_model,
     )
     model = REGRESSOR_BUILDERS[best_model](hyperparameters=hyperparameters)
-    model.fit(X_fit, y)
+    model.fit(X_fit, y_model)
 
     model_path = save_model(model, "yards_gained", experiment_id=exp_id)
     best_model_path = save_model(model, "yards_gained", to_best_model=True)
+    transform_path = save_target_transform(
+        target_transform,
+        "yards_gained",
+        experiment_id=exp_id,
+        filename=TARGET_TRANSFORM_FILENAME,
+    )
+    best_transform_path = save_target_transform(
+        target_transform,
+        "yards_gained",
+        to_best_model=True,
+        filename=TARGET_TRANSFORM_FILENAME,
+    )
+    imputer_path = save_feature_imputer(
+        imputer,
+        "yards_gained",
+        experiment_id=exp_id,
+        filename=FEATURE_IMPUTER_FILENAME,
+    )
+    best_imputer_path = save_feature_imputer(
+        imputer,
+        "yards_gained",
+        to_best_model=True,
+        filename=FEATURE_IMPUTER_FILENAME,
+    )
     save_feature_importance(
         model,
         X.columns.tolist(),
@@ -111,11 +160,16 @@ def refit_best_regressor(
         "experiment_id": exp_id,
         "play_type_experiment": play_type_exp,
         "model_key": best_model,
+        "target_transform": target_transform.name,
         "seed": SEED,
         "n_rows": len(y),
         "n_features": X.shape[1],
         "model_path": str(model_path.name),
         "best_model_path": str(best_model_path.name),
+        "target_transform_path": str(transform_path.name),
+        "best_target_transform_path": str(best_transform_path.name),
+        "imputer_path": str(imputer_path.name),
+        "best_imputer_path": str(best_imputer_path.name),
         "feature_importance": feature_importance_relpath(best_model),
     }
     for out_dir in (artifacts_dir, best_model_path.parent):
@@ -143,6 +197,8 @@ def refit_best_regressor(
             source_files=[
                 MODEL_COMPARISON_FILENAME,
                 METADATA_FILENAME,
+                TARGET_TRANSFORM_FILENAME,
+                FEATURE_IMPUTER_FILENAME,
                 FEATURE_IMPORTANCE_DIRNAME,
             ],
         )

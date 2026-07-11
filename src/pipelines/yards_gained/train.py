@@ -24,6 +24,11 @@ from src.evaluation.model_selection import select_best_model, summarize_cv_resul
 from src.models import iter_regressor_builders
 from src.pipelines.play_type.oof import get_best_oof_proba
 from src.preprocessing.split_data import train_test_split_frame
+from src.preprocessing.target_transform import (
+    TargetTransform,
+    build_target_transform,
+    resolve_target_transform_name,
+)
 from src.utils.experiment_profile import get_active_profile_or_none
 from src.utils.experiments import (
     allocate_experiment_id,
@@ -32,11 +37,16 @@ from src.utils.experiments import (
     task_experiment_dir,
     update_experiment_config,
 )
-from src.utils.io import ensure_artifacts_dir
+from src.utils.io import (
+    ensure_artifacts_dir,
+    save_target_transform,
+    TARGET_TRANSFORM_FILENAME,
+)
 
 __all__ = [
     "HOLDOUT_RESULTS_FILENAME",
     "MODEL_COMPARISON_FILENAME",
+    "TARGET_TRANSFORM_FILENAME",
     "TEST_PREDICTIONS_FILENAME",
     "build_augmented_yards_frame",
     "run_yards_gained_holdout",
@@ -77,17 +87,19 @@ def run_yards_gained_holdout(
     *,
     play_type_experiment_id: str | None = None,
     experiment_id: str | None = None,
+    target_transform: TargetTransform | None = None,
 ) -> tuple[
     list[dict],
     pd.DataFrame,
     pd.DataFrame,
     pd.DataFrame,
+    TargetTransform,
 ]:
     """
     Train profile regressors on 80% and score on 20% holdout.
 
-    Returns holdout records, comparison summary, holdout results table, and
-    test predictions (one row per holdout play).
+    Returns holdout records, comparison summary, holdout results table,
+    test predictions (one row per holdout play), and the fitted target transform.
     """
     X, y = build_augmented_yards_frame(
         play_type_experiment_id=play_type_experiment_id,
@@ -97,6 +109,11 @@ def run_yards_gained_holdout(
 
     X_train, X_test, y_train, y_test = train_test_split_frame(frame, TARGET_REG)
     impute_cols = yards_numeric_columns(X_train)
+
+    transform = target_transform or build_target_transform(
+        resolve_target_transform_name("yards_gained")
+    )
+    y_train_model = transform.fit_transform(y_train)
 
     records: list[dict] = []
     test_preds: dict[str, np.ndarray] = {}
@@ -109,8 +126,9 @@ def run_yards_gained_holdout(
         )
 
         model = builder()
-        model.fit(X_train_imp, y_train)
-        y_pred = model.predict(X_test_imp)
+        model.fit(X_train_imp, y_train_model)
+        y_pred_model = model.predict(X_test_imp)
+        y_pred = transform.inverse_transform(y_pred_model)
         test_preds[model_key] = np.asarray(y_pred, dtype=float)
 
         if experiment_id:
@@ -132,7 +150,7 @@ def run_yards_gained_holdout(
     for model_key, preds in test_preds.items():
         pred_frame[f"y_pred_{model_key}"] = preds
 
-    return records, comparison, holdout_df, pred_frame
+    return records, comparison, holdout_df, pred_frame, transform
 
 
 def train_yards_gained(
@@ -151,6 +169,9 @@ def train_yards_gained(
         "seed": profile.seed if profile else SEED,
         "play_type_experiment": play_type_exp,
     }
+    target_transform_name = resolve_target_transform_name("yards_gained")
+    if target_transform_name != "none":
+        config_patch["target_transform"] = target_transform_name
     if profile is not None:
         config_patch["name"] = profile.name
         if profile.description:
@@ -159,7 +180,7 @@ def train_yards_gained(
             config_patch["profile"] = str(profile.source_path)
     update_experiment_config(exp_id, config_patch)
 
-    _, comparison, holdout_df, pred_frame = run_yards_gained_holdout(
+    _, comparison, holdout_df, pred_frame, target_transform = run_yards_gained_holdout(
         play_type_experiment_id=play_type_exp,
         experiment_id=exp_id,
     )
@@ -168,21 +189,30 @@ def train_yards_gained(
     holdout_df.to_csv(out_dir / HOLDOUT_RESULTS_FILENAME, index=False)
     comparison.to_csv(out_dir / MODEL_COMPARISON_FILENAME, index=False)
     pred_frame.to_parquet(out_dir / TEST_PREDICTIONS_FILENAME, index=False)
+    save_target_transform(
+        target_transform,
+        "yards_gained",
+        experiment_id=exp_id,
+        filename=TARGET_TRANSFORM_FILENAME,
+    )
 
     set_active_experiment("yards_gained", exp_id)
     models_config = profile.task_models_config("yards_gained") if profile else None
+    yards_task_config = build_task_result_config(
+        "yards_gained",
+        comparison,
+        metric="rmse",
+        higher_is_better=False,
+        experiment_id=exp_id,
+        models_config=models_config,
+    )
+    if target_transform_name != "none":
+        yards_task_config["target_transform"] = target_transform_name
     update_experiment_config(
         exp_id,
         {
             "tasks": {
-                "yards_gained": build_task_result_config(
-                    "yards_gained",
-                    comparison,
-                    metric="rmse",
-                    higher_is_better=False,
-                    experiment_id=exp_id,
-                    models_config=models_config,
-                ),
+                "yards_gained": yards_task_config,
             }
         },
     )

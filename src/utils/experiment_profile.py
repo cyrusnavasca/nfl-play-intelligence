@@ -15,6 +15,7 @@ from typing import Any, Iterator
 import yaml
 
 from src.data.schema import MODEL_REGISTRY_KEYS, N_FOLDS, SEED, ModelingTask
+from src.preprocessing.target_transform import TARGET_TRANSFORM_KEYS
 
 __all__ = [
     "DEFAULT_PROFILE_PATH",
@@ -39,6 +40,7 @@ class TaskProfile:
     """Models and hyperparameters for one modeling task."""
 
     models: dict[str, dict[str, Any]]
+    target_transform: str | None = None
 
     def model_keys(self) -> tuple[str, ...]:
         return tuple(self.models)
@@ -79,6 +81,13 @@ class ExperimentProfile:
             for model_key, hyperparameters in self.tasks[task].models.items()
         }
 
+    def task_target_transform(self, task: ModelingTask) -> str:
+        """Return the configured target transform for *task* (yards gained only)."""
+        task_profile = self.tasks.get(task)
+        if task_profile is None or task_profile.target_transform is None:
+            return "none"
+        return task_profile.target_transform
+
     def to_snapshot_base(self, experiment_id: str) -> dict[str, Any]:
         """Initial experiment config written before training starts."""
         payload: dict[str, Any] = {
@@ -98,12 +107,15 @@ class ExperimentProfile:
             payload["play_type_experiment"] = self.play_type_experiment
 
         for task, task_profile in self.tasks.items():
-            payload["tasks"][task] = {
+            task_payload: dict[str, Any] = {
                 "models": {
                     model_key: {"hyperparameters": dict(hyperparameters)}
                     for model_key, hyperparameters in task_profile.models.items()
                 }
             }
+            if task_profile.target_transform is not None:
+                task_payload["target_transform"] = task_profile.target_transform
+            payload["tasks"][task] = task_payload
         return payload
 
 
@@ -131,6 +143,19 @@ def validate_experiment_profile(raw: dict[str, Any], *, source: str = "profile")
                 f"{source} task {task_name!r} must define a non-empty 'models' mapping"
             )
 
+        target_transform = task_block.get("target_transform")
+        if target_transform is not None:
+            if task_name != "yards_gained":
+                raise ValueError(
+                    f"{source} task {task_name!r} does not support "
+                    f"'target_transform' (yards_gained only)"
+                )
+            if str(target_transform) not in TARGET_TRANSFORM_KEYS:
+                raise ValueError(
+                    f"{source} task {task_name!r} has unknown target_transform "
+                    f"{target_transform!r}; expected one of {TARGET_TRANSFORM_KEYS}"
+                )
+
         for model_key, hyperparameters in models.items():
             if model_key not in MODEL_REGISTRY_KEYS:
                 raise ValueError(
@@ -152,7 +177,12 @@ def _parse_task_profiles(raw_tasks: dict[str, Any]) -> dict[ModelingTask, TaskPr
             str(model_key): dict(hyperparameters)
             for model_key, hyperparameters in task_block["models"].items()
         }
-        tasks[task] = TaskProfile(models=models)
+        raw_transform = task_block.get("target_transform")
+        target_transform = str(raw_transform) if raw_transform is not None else None
+        tasks[task] = TaskProfile(
+            models=models,
+            target_transform=target_transform,
+        )
     return tasks
 
 

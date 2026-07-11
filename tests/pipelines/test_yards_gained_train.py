@@ -63,7 +63,7 @@ def test_holdout_smoke_on_subsample(yards_subsample, monkeypatch) -> None:
         lambda **_: oof_proba,
     )
 
-    records, comparison, holdout_df, pred_frame = run_yards_gained_holdout()
+    records, comparison, holdout_df, pred_frame, _ = run_yards_gained_holdout()
 
     assert len(comparison) == len(REGRESSOR_BUILDERS)
     assert len(holdout_df) == len(REGRESSOR_BUILDERS)
@@ -78,6 +78,9 @@ def test_holdout_smoke_on_subsample(yards_subsample, monkeypatch) -> None:
 
     for record in records:
         assert record["model"] in REGRESSOR_BUILDERS
+        assert "rmse" in record
+        assert "mae" in record
+        assert "r2" in record
 
 
 def test_oof_parquet_has_zero_nans_when_present() -> None:
