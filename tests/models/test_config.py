@@ -3,26 +3,26 @@ from __future__ import annotations
 
 import pytest
 
-from src.models.config import load_model_hyperparameters, snapshot_task_hyperparameters
+from src.models.config import load_model_hyperparameters, snapshot_hyperparameters
 
 
-def test_load_xgboost_play_type_config() -> None:
-    params = load_model_hyperparameters("play_type", "xgboost")
+def test_load_xgboost_config() -> None:
+    params = load_model_hyperparameters("xgboost")
     assert params["n_estimators"] == 300
     assert params["max_depth"] == 6
     assert params["random_state"] == 42
 
 
 def test_snapshot_includes_all_registry_keys() -> None:
-    snapshot = snapshot_task_hyperparameters("yards_gained")
+    snapshot = snapshot_hyperparameters()
     assert set(snapshot) == {"baseline", "random_forest", "xgboost"}
-    assert snapshot["baseline"]["hyperparameters"]["strategy"] == "mean"
+    assert snapshot["baseline"]["hyperparameters"]["strategy"] == "prior"
 
 
-def test_build_task_result_config_shape() -> None:
+def test_build_result_config_shape() -> None:
     import pandas as pd
 
-    from src.utils.experiments import build_task_result_config
+    from src.utils.experiments import build_result_config
 
     comparison = pd.DataFrame(
         {
@@ -31,14 +31,12 @@ def test_build_task_result_config_shape() -> None:
             "roc_auc_std": [0.0, 0.01],
         }
     )
-    task_cfg = build_task_result_config(
-        "play_type",
+    result_cfg = build_result_config(
         comparison,
         metric="roc_auc",
         higher_is_better=True,
-        experiment_id="exp_001",
     )
-    assert task_cfg["best_model"] == "xgboost"
-    assert task_cfg["roc_auc"] == pytest.approx(0.81)
-    assert "models" in task_cfg
-    assert "hyperparameters" in task_cfg["models"]["xgboost"]
+    assert result_cfg["best_model"] == "xgboost"
+    assert result_cfg["roc_auc"] == pytest.approx(0.81)
+    assert "models" in result_cfg
+    assert "hyperparameters" in result_cfg["models"]["xgboost"]

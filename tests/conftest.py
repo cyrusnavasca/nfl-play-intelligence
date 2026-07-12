@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.data.loaders import load_play_type_dataset, load_yards_gained_dataset
+from src.data.loaders import load_play_type_dataset
 from src.utils.experiment_profile import (
     DEFAULT_PROFILE_PATH,
     load_experiment_profile,
@@ -17,16 +17,6 @@ SUBSAMPLE_ROWS = 1_000
 def play_type_subsample() -> tuple:
     """First 1k rows of the play-type modeling frame."""
     X, y = load_play_type_dataset()
-    return (
-        X.iloc[:SUBSAMPLE_ROWS].reset_index(drop=True),
-        y.iloc[:SUBSAMPLE_ROWS].reset_index(drop=True),
-    )
-
-
-@pytest.fixture(scope="session")
-def yards_subsample() -> tuple:
-    """First 1k rows of the yards-gained modeling frame."""
-    X, y = load_yards_gained_dataset()
     return (
         X.iloc[:SUBSAMPLE_ROWS].reset_index(drop=True),
         y.iloc[:SUBSAMPLE_ROWS].reset_index(drop=True),
@@ -62,12 +52,5 @@ def experiment_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "src.evaluation.feature_importance.MODELING_ARTIFACTS_DIR",
         modeling_dir,
-    )
-    monkeypatch.setattr(
-        "src.utils.experiments._LEGACY_TASK_DIRS",
-        {
-            "play_type": modeling_dir / "play_type",
-            "yards_gained": modeling_dir / "yards_gained",
-        },
     )
     return modeling_dir

@@ -2,12 +2,12 @@
 Task 1 — threshold-based final keep lists.
 
 Usage (from project root):
-    python3 -m src.selection.play_type.threshold
+    python3 -m src.selection.threshold
 """
 from __future__ import annotations
 
-from src.selection.play_type.embedded import PlayTypeEmbeddedResults
-from src.selection.play_type.univariate import PlayTypeUnivariateResults
+from src.selection.embedded import PlayTypeEmbeddedResults
+from src.selection.univariate import PlayTypeUnivariateResults
 from src.selection.shared.common import (
     _assert_no_drop_always,
     chi2_significant_categoricals,
@@ -40,8 +40,8 @@ def build_task1_final(
 
 
 def main() -> tuple[list[str], list[str]]:
-    from src.selection.play_type.embedded import run_task1_embedded
-    from src.selection.play_type.univariate import run_task1_univariate
+    from src.selection.embedded import run_task1_embedded
+    from src.selection.univariate import run_task1_univariate
 
     df = load_features_full()
     print(f"[INFO] Loaded features_full: {df.shape}")

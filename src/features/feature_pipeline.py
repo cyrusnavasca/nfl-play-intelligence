@@ -18,7 +18,7 @@ Pipeline:
        - offense: off_pass_rate_L3, off_rush_yds_L3, off_pass_yds_L3
        - defense: def_rush_yds_allowed_L3, def_pass_yds_allowed_L3
     3. Formation features
-       - is_heavy_formation, is_spread_formation, box_advantage
+       - is_qb_in_gun, box_advantage
     4. Situational features
        - score_differential, time_adjusted_score_diff, red_zone, backed_up,
          two_minute_drill
@@ -49,7 +49,7 @@ def build_feature_dataset(pbp_path: Path = PBP_PATH) -> pd.DataFrame:
     Returns the fully-featured PBP DataFrame with 17 new columns:
         team:        off_pass_rate_L3, off_rush_yds_L3, off_pass_yds_L3,
                      def_rush_yds_allowed_L3, def_pass_yds_allowed_L3
-        formation:   is_heavy_formation, is_spread_formation, box_advantage
+        formation:   is_qb_in_gun, box_advantage
         situational: score_differential, time_adjusted_score_diff, red_zone,
                      backed_up, two_minute_drill
         encoding:    is_turf, is_indoor, is_playoffs, is_home

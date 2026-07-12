@@ -1,10 +1,7 @@
 """Feature importance artifact helpers."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
-import pytest
 from sklearn.ensemble import RandomForestClassifier
 
 from src.evaluation.feature_importance import (
@@ -14,7 +11,7 @@ from src.evaluation.feature_importance import (
     save_feature_importance,
     to_feature_importance_frame,
 )
-from src.models.config import snapshot_task_hyperparameters
+from src.models.config import snapshot_hyperparameters
 
 
 def test_feature_importance_relpath() -> None:
@@ -47,7 +44,6 @@ def test_save_feature_importance_writes_per_model_file(
     out_path = save_feature_importance(
         model,
         ["x1", "x2"],
-        "play_type",
         "random_forest",
         experiment_id=exp_id,
     )
@@ -56,7 +52,6 @@ def test_save_feature_importance_writes_per_model_file(
         experiment_dirs
         / "experiments"
         / exp_id
-        / "play_type"
         / FEATURE_IMPORTANCE_DIRNAME
         / "random_forest.csv"
     )
@@ -64,52 +59,51 @@ def test_save_feature_importance_writes_per_model_file(
 
 
 def test_enrich_models_snapshot_adds_paths(experiment_dirs) -> None:
-    from src.utils.experiments import allocate_experiment_id, task_experiment_dir
+    from src.utils.experiments import allocate_experiment_id, experiment_root
 
     exp_id = allocate_experiment_id()
-    fi_dir = task_experiment_dir(exp_id, "play_type") / FEATURE_IMPORTANCE_DIRNAME
+    fi_dir = experiment_root(exp_id) / FEATURE_IMPORTANCE_DIRNAME
     fi_dir.mkdir(parents=True)
     (fi_dir / "xgboost.csv").write_text("feature,importance\na,1.0\n")
 
-    models = snapshot_task_hyperparameters("play_type")
-    enriched = enrich_models_snapshot("play_type", exp_id, models)
+    models = snapshot_hyperparameters()
+    enriched = enrich_models_snapshot(exp_id, models)
 
     assert "feature_importance" not in enriched["baseline"]
     assert enriched["xgboost"]["feature_importance"] == "feature_importance/xgboost.csv"
 
 
-def test_build_task_result_config_includes_feature_importance_paths(
+def test_build_result_config_includes_feature_importance_paths(
     experiment_dirs,
 ) -> None:
     import pandas as pd
 
     from src.utils.experiments import (
         allocate_experiment_id,
-        build_task_result_config,
-        task_experiment_dir,
+        build_result_config,
+        experiment_root,
     )
 
     exp_id = allocate_experiment_id()
-    fi_dir = task_experiment_dir(exp_id, "yards_gained") / FEATURE_IMPORTANCE_DIRNAME
+    fi_dir = experiment_root(exp_id) / FEATURE_IMPORTANCE_DIRNAME
     fi_dir.mkdir(parents=True)
     (fi_dir / "random_forest.csv").write_text("feature,importance\na,1.0\n")
 
     comparison = pd.DataFrame(
         {
             "model": ["baseline", "random_forest"],
-            "rmse_mean": [10.0, 8.0],
-            "rmse_std": [0.0, 0.0],
+            "roc_auc_mean": [0.5, 0.8],
+            "roc_auc_std": [0.0, 0.0],
         }
     )
-    task_cfg = build_task_result_config(
-        "yards_gained",
+    result_cfg = build_result_config(
         comparison,
-        metric="rmse",
-        higher_is_better=False,
+        metric="roc_auc",
+        higher_is_better=True,
         experiment_id=exp_id,
     )
-    assert task_cfg["best_model"] == "random_forest"
+    assert result_cfg["best_model"] == "random_forest"
     assert (
-        task_cfg["models"]["random_forest"]["feature_importance"]
+        result_cfg["models"]["random_forest"]["feature_importance"]
         == "feature_importance/random_forest.csv"
     )

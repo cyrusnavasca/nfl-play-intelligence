@@ -8,7 +8,7 @@ from src.data.schema import SEED
 from src.evaluation.cross_validation import cross_validate_classifier, stratified_folds
 from src.evaluation.model_selection import summarize_cv_results
 from src.models import CLASSIFIER_BUILDERS
-from src.pipelines.play_type.train import run_play_type_cross_validation
+from src.pipelines.train import run_play_type_cross_validation
 
 
 def _run_cv_on_subsample(X: pd.DataFrame, y: pd.Series, *, n_folds: int = 2):
@@ -36,7 +36,7 @@ def _run_cv_on_subsample(X: pd.DataFrame, y: pd.Series, *, n_folds: int = 2):
 def test_play_type_cv_smoke_on_subsample(play_type_subsample, monkeypatch) -> None:
     X, y = play_type_subsample
     monkeypatch.setattr(
-        "src.pipelines.play_type.train.load_play_type_dataset",
+        "src.pipelines.train.load_play_type_dataset",
         lambda: (X, y),
     )
 

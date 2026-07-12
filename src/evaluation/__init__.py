@@ -1,1 +1,1 @@
-"""Shared modeling evaluation — CV, metrics, model selection, OOF helpers."""
+"""Shared modeling evaluation — CV, metrics, model selection."""

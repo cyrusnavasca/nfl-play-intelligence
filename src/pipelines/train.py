@@ -4,8 +4,8 @@ Play-type classification CV pipeline.
 Wires data loaders, model builders, and shared evaluation into artifacts.
 
 Usage (from project root):
-    python3 -m src.pipelines.play_type.train
-    python3 -m src.pipelines.play_type.train --experiment log_loss_v2
+    python3 -m src.pipelines.train
+    python3 -m src.pipelines.train --experiment log_loss_v2
 """
 from __future__ import annotations
 
@@ -17,13 +17,13 @@ import pandas as pd
 from src.data.loaders import load_play_type_dataset
 from src.data.schema import N_FOLDS, SEED
 from src.evaluation.cross_validation import cross_validate_classifier, stratified_folds
-from src.evaluation.feature_importance import export_play_type_feature_importances
+from src.evaluation.feature_importance import export_feature_importances
 from src.evaluation.model_selection import summarize_cv_results
 from src.models import iter_classifier_builders
 from src.utils.experiment_profile import get_active_profile_or_none
 from src.utils.experiments import (
     allocate_experiment_id,
-    build_task_result_config,
+    build_result_config,
     set_active_experiment,
     update_experiment_config,
 )
@@ -94,7 +94,7 @@ def run_play_type_cross_validation(
 
 
 def train_play_type(*, experiment_id: str | None = None) -> tuple[pd.DataFrame, str]:
-    """Run play-type CV and write artifacts under ``experiments/<id>/play_type/``."""
+    """Run play-type CV and write artifacts under ``experiments/<id>/``."""
     profile = get_active_profile_or_none()
     exp_id = experiment_id or allocate_experiment_id()
     config_patch: dict[str, object] = {
@@ -111,29 +111,24 @@ def train_play_type(*, experiment_id: str | None = None) -> tuple[pd.DataFrame, 
 
     records, _, comparison = run_play_type_cross_validation()
 
-    write_cv_results(records, "play_type", experiment_id=exp_id)
-    out_dir = ensure_artifacts_dir("play_type", experiment_id=exp_id)
+    write_cv_results(records, experiment_id=exp_id)
+    out_dir = ensure_artifacts_dir(experiment_id=exp_id)
     comparison_path = out_dir / MODEL_COMPARISON_FILENAME
     comparison.to_csv(comparison_path, index=False)
 
-    export_play_type_feature_importances(experiment_id=exp_id)
+    export_feature_importances(experiment_id=exp_id)
 
-    set_active_experiment("play_type", exp_id)
-    models_config = profile.task_models_config("play_type") if profile else None
+    set_active_experiment(exp_id)
+    models_config = profile.models_config() if profile else None
     update_experiment_config(
         exp_id,
-        {
-            "tasks": {
-                "play_type": build_task_result_config(
-                    "play_type",
-                    comparison,
-                    metric="roc_auc",
-                    higher_is_better=True,
-                    experiment_id=exp_id,
-                    models_config=models_config,
-                ),
-            }
-        },
+        build_result_config(
+            comparison,
+            metric="roc_auc",
+            higher_is_better=True,
+            experiment_id=exp_id,
+            models_config=models_config,
+        ),
     )
 
     return comparison, exp_id
@@ -155,5 +150,5 @@ if __name__ == "__main__":
     args = _parse_args()
     with use_experiment_profile(load_experiment_profile(DEFAULT_PROFILE_PATH)):
         comparison_df, exp_id = train_play_type(experiment_id=args.experiment)
-    print(f"Play-type CV complete → experiments/{exp_id}/play_type/{MODEL_COMPARISON_FILENAME}")
+    print(f"Play-type CV complete → experiments/{exp_id}/{MODEL_COMPARISON_FILENAME}")
     print(comparison_df.to_string(index=False))

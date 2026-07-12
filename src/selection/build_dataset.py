@@ -2,16 +2,13 @@
 Task 1 — build modeling-ready play-type parquet dataset.
 
 Usage (from project root):
-    python3 -m src.selection.play_type.build_dataset
+    python3 -m src.selection.build_dataset
 """
 from __future__ import annotations
 
 import pandas as pd
 
-from src.selection.play_type.embedded import (
-    build_task1_feature_matrix,
-    cross_fitted_pass_proba,
-)
+from src.selection.embedded import build_task1_feature_matrix
 from src.selection.shared.common import (
     _assert_no_excluded,
     binary_play_type,
@@ -22,7 +19,6 @@ from src.selection.shared.feature_schema import (
     PLAY_TYPE_MODELING_PARQUET_PATH,
     PROCESSED_DIR,
     TARGET_CLF,
-    TARGET_REG,
     validate_feature_schema,
 )
 from src.selection.shared.manifest import load_selection_manifest, validate_selection_manifest
@@ -76,8 +72,6 @@ def validate_task1_dataset(
         )
 
     _assert_no_excluded(dataset.columns.tolist(), "task1 dataset")
-    if TARGET_REG in dataset.columns:
-        raise ValueError("task1 dataset must not include yards_gained")
 
     for col in cat_cols:
         if col in dataset.columns:

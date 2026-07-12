@@ -21,14 +21,10 @@ PROCESSED_DIR = Path("data/processed")
 ARTIFACTS_DIR = Path("artifacts/feature_importance")
 
 PLAY_TYPE_MODELING_PARQUET_PATH = PROCESSED_DIR / "play_type_modeling.parquet"
-YARDS_GAINED_MODELING_PARQUET_PATH = PROCESSED_DIR / "yards_gained_modeling.parquet"
 
 CHI2_SCREENING_CSV = ARTIFACTS_DIR / "chi2_categorical_screening.csv"
 TASK1_NUMERIC_SCREENING_CSV = ARTIFACTS_DIR / "task1_numeric_screening.csv"
-TASK2_NUMERIC_SCREENING_CSV = ARTIFACTS_DIR / "task2_numeric_screening.csv"
 TASK1_EMBEDDED_CSV = ARTIFACTS_DIR / "task1_embedded_importance.csv"
-TASK2_EMBEDDED_CSV = ARTIFACTS_DIR / "task2_embedded_importance.csv"
-CROSS_TASK_SUMMARY_CSV = ARTIFACTS_DIR / "cross_task_summary.csv"
 FEATURE_SELECTION_MANIFEST_PATH = ARTIFACTS_DIR / "feature_selection_manifest.json"
 
 # ---------------------------------------------------------------------------
@@ -46,16 +42,12 @@ MIN_SPEARMAN_ROWS = 100
 MI_N_NEIGHBORS = 5
 
 # ---------------------------------------------------------------------------
-# Targets
+# Target
 # ---------------------------------------------------------------------------
 
 TARGET_CLF = "play_type"
-TARGET_REG = "yards_gained"
 
-TARGET_COLS: list[str] = [TARGET_CLF, TARGET_REG]
-
-# Generated in Phase 4 — not present in features_full.parquet
-TASK2_GENERATED_FEATURES: list[str] = ["pred_pass_proba"]
+TARGET_COLS: list[str] = [TARGET_CLF]
 
 # ---------------------------------------------------------------------------
 # Excluded columns (never screened or modeled)
@@ -73,6 +65,7 @@ ID_COLS: list[str] = [
 
 LEAKY_COLS: list[str] = [
     "epa",  # outcome-derived
+    "yards_gained",  # play outcome; used upstream for team features, never a model feature
 ]
 
 # Pipeline metadata; not model inputs (game_date already excluded above)
@@ -146,8 +139,7 @@ ROLLING_FEATURES: list[str] = [
 ]
 
 FORMATION_FEATURES: list[str] = [
-    "is_heavy_formation",
-    "is_spread_formation",
+    "is_qb_in_gun",
     "box_advantage",
 ]
 
@@ -169,8 +161,7 @@ ENCODED_FEATURES: list[str] = [
 # Binary flags + discrete integers tested via chi-squared (Task 1 only).
 # Encoded binaries (is_turf, etc.) are excluded — raw categoricals cover them.
 CHI2_BINARY_FEATURES: list[str] = [
-    "is_heavy_formation",
-    "is_spread_formation",
+    "is_qb_in_gun",
     "red_zone",
     "backed_up",
     "two_minute_drill",
@@ -245,17 +236,6 @@ def validate_feature_schema(columns: list[str] | set[str]) -> None:
         raise FeatureSchemaValidationError(
             f"targets overlap DROP_ALWAYS: {sorted(overlap_targets_drop)}"
         )
-
-
-def column_group(column: str) -> str:
-    """Return ``target``, ``excluded``, or ``candidate`` for a parquet column."""
-    if column in TARGET_COLS:
-        return "target"
-    if column in DROP_ALWAYS:
-        return "excluded"
-    if column in CANDIDATE_FEATURES:
-        return "candidate"
-    raise FeatureSchemaValidationError(f"unknown column: {column}")
 
 
 if __name__ == "__main__":

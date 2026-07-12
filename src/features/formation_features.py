@@ -4,6 +4,11 @@ import numpy as np
 import pandas as pd
 
 
+# Offense formations where the QB lines up in the shotgun (EMPTY is always a
+# shotgun-aligned set). Used to flag "QB in gun" passing looks.
+_GUN_FORMATIONS = frozenset({"SHOTGUN", "EMPTY"})
+
+
 def _extract_position_count(personnel_str: pd.Series, position: str) -> pd.Series:
     """
     Extract the count of a given position abbreviation from an NFL personnel string.
@@ -25,34 +30,27 @@ def parse_offense_personnel(df: pd.DataFrame) -> pd.DataFrame:
     """
     Parse the `offense_personnel` string into numeric position counts.
 
-    New columns: off_rb_count, off_te_count, off_wr_count
+    New columns: off_rb_count, off_te_count
     """
     df = df.copy()
     df["off_rb_count"] = _extract_position_count(df["offense_personnel"], "RB")
     df["off_te_count"] = _extract_position_count(df["offense_personnel"], "TE")
-    df["off_wr_count"] = _extract_position_count(df["offense_personnel"], "WR")
     return df
 
 
-def add_formation_flags(df: pd.DataFrame) -> pd.DataFrame:
+def add_qb_in_gun(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Add binary formation indicators.
+    Add is_qb_in_gun: 1 when the QB lines up in the shotgun.
 
-    Requires off_rb_count, off_te_count, off_wr_count to already exist
-    (call parse_offense_personnel first).
+    True for SHOTGUN and EMPTY formations (EMPTY is always shotgun-aligned),
+    0 for every other formation (SINGLEBACK, I_FORM, PISTOL, JUMBO, WILDCAT,
+    UNDER CENTER). NaN offense_formation → 0.
 
-    New columns:
-        is_heavy_formation  – off_rb_count + off_te_count >= 3 (run-leaning)
-        is_spread_formation – off_wr_count >= 3               (pass-leaning)
+    A shotgun look is a strong pre-snap pass-tendency signal; PISTOL is
+    intentionally excluded (shallow-gun, more run-balanced).
     """
     df = df.copy()
-
-    heavy_mask = (df["off_rb_count"] + df["off_te_count"]) >= 3
-    df["is_heavy_formation"] = heavy_mask.astype("Int8")
-
-    spread_mask = df["off_wr_count"] >= 3
-    df["is_spread_formation"] = spread_mask.astype("Int8")
-
+    df["is_qb_in_gun"] = df["offense_formation"].isin(_GUN_FORMATIONS).astype("Int8")
     return df
 
 
@@ -75,26 +73,26 @@ def add_box_advantage(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-_TEMP_COUNT_COLS = ["off_rb_count", "off_te_count", "off_wr_count"]
+_TEMP_COUNT_COLS = ["off_rb_count", "off_te_count"]
 
 
 def build_formation_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Master function: parse personnel strings and derive the 3 formation features.
+    Master function: derive the formation features.
 
-    Output columns: is_heavy_formation, is_spread_formation, box_advantage.
+    Output columns: is_qb_in_gun, box_advantage.
 
     Applied in order:
-        1. parse_offense_personnel   → off_rb_count, off_te_count, off_wr_count (temp)
-        2. add_formation_flags       → is_heavy_formation, is_spread_formation
+        1. parse_offense_personnel   → off_rb_count, off_te_count (temp)
+        2. add_qb_in_gun             → is_qb_in_gun
         3. add_box_advantage         → box_advantage
-        4. drop the temporary count columns so only the 3 features are added
+        4. drop the temporary count columns so only the 2 features are added
 
-    The position counts are internal-only: the three surviving features all derive
-    from them, but the raw counts are not emitted to the final dataset.
+    is_qb_in_gun derives directly from offense_formation; box_advantage derives
+    from the parsed personnel counts, which are internal-only and not emitted.
     """
     df = parse_offense_personnel(df)
-    df = add_formation_flags(df)
+    df = add_qb_in_gun(df)
     df = add_box_advantage(df)
     df = df.drop(columns=_TEMP_COUNT_COLS)
     return df

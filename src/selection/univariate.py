@@ -2,7 +2,7 @@
 Task 1 — univariate feature selection (chi-squared + numeric screening).
 
 Usage (from project root):
-    python3 -m src.selection.play_type.univariate
+    python3 -m src.selection.univariate
 """
 from __future__ import annotations
 

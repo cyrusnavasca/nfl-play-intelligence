@@ -9,7 +9,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
-from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+from sklearn.feature_selection import mutual_info_classif
 from sklearn.impute import SimpleImputer
 
 from src.selection.shared.feature_schema import (
@@ -26,7 +26,6 @@ from src.selection.shared.feature_schema import (
     SEED,
     SP_THRESHOLD,
     TARGET_CLF,
-    TARGET_REG,
 )
 
 # ---------------------------------------------------------------------------
@@ -159,7 +158,7 @@ def passes_embedded_gate(
     Univariate-passing numerics that also meet the embedded gain threshold.
 
     Only rows whose ``feature`` is in *numeric_cols* are considered; one-hot
-    categoricals and ``pred_pass_proba`` are excluded from this gate.
+    categoricals are excluded from this gate.
     """
     eligible = set(numeric_cols)
     passed = embedded_df.loc[
@@ -267,28 +266,13 @@ def task1_numeric_screening(df: pd.DataFrame, X_imp: np.ndarray) -> pd.DataFrame
     return combine_numeric_screening(sp_df, mi_s, mi_col="mi_clf")
 
 
-def task2_numeric_screening(df: pd.DataFrame, X_imp: np.ndarray) -> pd.DataFrame:
-    """Spearman + regression MI combined table for yards_gained."""
-    y_reg = df[TARGET_REG]
-    sp_df = spearman_numeric_screening(df, target_col=TARGET_REG)
-    y_reg_imp = y_reg.fillna(y_reg.median())
-    mi_reg = mutual_info_regression(
-        X_imp,
-        y_reg_imp,
-        random_state=SEED,
-        n_neighbors=MI_N_NEIGHBORS,
-    )
-    mi_s = pd.Series(mi_reg, index=ALL_NUMERIC)
-    return combine_numeric_screening(sp_df, mi_s, mi_col="mi_reg")
-
-
 # ---------------------------------------------------------------------------
 # Embedded helpers
 # ---------------------------------------------------------------------------
 
 
 def _accumulate_fold_gain(
-    model: lgb.LGBMClassifier | lgb.LGBMRegressor,
+    model: lgb.LGBMClassifier,
     feature_names: list[str],
     accum: dict[str, float],
 ) -> None:

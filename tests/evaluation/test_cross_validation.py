@@ -2,15 +2,13 @@
 from __future__ import annotations
 
 import numpy as np
-from sklearn.model_selection import KFold
 
 from src.data.schema import SEED
 from src.evaluation.cross_validation import (
     cross_validate_classifier,
-    cross_validate_regressor,
     stratified_folds,
 )
-from src.models import CLASSIFIER_BUILDERS, REGRESSOR_BUILDERS
+from src.models import CLASSIFIER_BUILDERS
 
 
 def test_stratified_folds_deterministic(play_type_subsample) -> None:
@@ -40,22 +38,3 @@ def test_classifier_cv_two_fold_smoke(play_type_subsample) -> None:
     assert len(result.oof) == len(y)
     assert not np.isnan(result.oof).any()
     assert 0.0 <= result.oof.min() <= result.oof.max() <= 1.0
-
-
-def test_regressor_cv_two_fold_smoke(yards_subsample) -> None:
-    X, y = yards_subsample
-    kf = KFold(n_splits=2, shuffle=True, random_state=SEED)
-    folds = [(train_idx, val_idx) for train_idx, val_idx in kf.split(X)]
-    impute_cols = X.select_dtypes(include=np.number).columns.tolist()
-
-    result = cross_validate_regressor(
-        REGRESSOR_BUILDERS["baseline"](),
-        X,
-        y,
-        folds,
-        impute_numeric_cols=impute_cols,
-    )
-
-    assert len(result.fold_metrics) == 2
-    assert len(result.oof) == len(y)
-    assert not np.isnan(result.oof).any()

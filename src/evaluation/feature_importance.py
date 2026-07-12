@@ -1,9 +1,9 @@
 """
-Extract and persist model feature importances under each experiment task.
+Extract and persist model feature importances under each experiment.
 
 Layout::
 
-    experiments/<id>/<task>/feature_importance/<model_key>.csv
+    experiments/<id>/feature_importance/<model_key>.csv
 
 Reference: ``docs/handoff_metrics_and_hyperparams.md`` (model artifact snapshot).
 """
@@ -14,12 +14,12 @@ from pathlib import Path
 import pandas as pd
 from sklearn.base import BaseEstimator
 
-from src.data.schema import MODELING_ARTIFACTS_DIR, MODEL_REGISTRY_KEYS, ModelingTask
+from src.data.schema import MODELING_ARTIFACTS_DIR, MODEL_REGISTRY_KEYS
 
 __all__ = [
     "FEATURE_IMPORTANCE_DIRNAME",
     "enrich_models_snapshot",
-    "export_play_type_feature_importances",
+    "export_feature_importances",
     "feature_importance_path",
     "feature_importance_relpath",
     "save_feature_importance",
@@ -29,22 +29,22 @@ __all__ = [
 FEATURE_IMPORTANCE_DIRNAME = "feature_importance"
 
 
-def _task_experiment_dir(experiment_id: str, task: ModelingTask) -> Path:
-    return MODELING_ARTIFACTS_DIR / "experiments" / experiment_id / task
+def _experiment_dir(experiment_id: str) -> Path:
+    return MODELING_ARTIFACTS_DIR / "experiments" / experiment_id
 
 
-def _best_model_task_dir(task: ModelingTask) -> Path:
-    return MODELING_ARTIFACTS_DIR / "best_model" / task
+def _best_model_dir() -> Path:
+    return MODELING_ARTIFACTS_DIR / "best_model"
 
 
 def feature_importance_relpath(model_key: str) -> str:
-    """Relative path from a task artifact dir to a model importance CSV."""
+    """Relative path from an artifact dir to a model importance CSV."""
     return f"{FEATURE_IMPORTANCE_DIRNAME}/{model_key}.csv"
 
 
-def feature_importance_path(task_dir: Path, model_key: str) -> Path:
-    """Absolute path for a model's feature-importance CSV under *task_dir*."""
-    return task_dir / feature_importance_relpath(model_key)
+def feature_importance_path(artifacts_dir: Path, model_key: str) -> Path:
+    """Absolute path for a model's feature-importance CSV under *artifacts_dir*."""
+    return artifacts_dir / feature_importance_relpath(model_key)
 
 
 def to_feature_importance_frame(
@@ -69,22 +69,20 @@ def to_feature_importance_frame(
 
 
 def _resolve_output_dir(
-    task: ModelingTask,
     *,
     experiment_id: str | None,
     to_best_model: bool,
 ) -> Path:
     if to_best_model:
-        return _best_model_task_dir(task)
+        return _best_model_dir()
     if experiment_id:
-        return _task_experiment_dir(experiment_id, task)
+        return _experiment_dir(experiment_id)
     raise ValueError("save_feature_importance requires experiment_id or to_best_model=True")
 
 
 def save_feature_importance(
     model: BaseEstimator,
     feature_names: list[str],
-    task: ModelingTask,
     model_key: str,
     *,
     experiment_id: str | None = None,
@@ -99,7 +97,6 @@ def save_feature_importance(
         return None
 
     out_dir = _resolve_output_dir(
-        task,
         experiment_id=experiment_id,
         to_best_model=to_best_model,
     )
@@ -110,31 +107,30 @@ def save_feature_importance(
 
 
 def enrich_models_snapshot(
-    task: ModelingTask,
     experiment_id: str,
     models: dict[str, dict[str, object]],
 ) -> dict[str, dict[str, object]]:
     """Add ``feature_importance`` relative paths to a models snapshot when files exist."""
-    task_dir = _task_experiment_dir(experiment_id, task)
+    artifacts_dir = _experiment_dir(experiment_id)
     enriched: dict[str, dict[str, object]] = {}
 
     for model_key, entry in models.items():
         updated = dict(entry)
-        if feature_importance_path(task_dir, model_key).exists():
+        if feature_importance_path(artifacts_dir, model_key).exists():
             updated["feature_importance"] = feature_importance_relpath(model_key)
         enriched[model_key] = updated
 
     return enriched
 
 
-def export_play_type_feature_importances(
+def export_feature_importances(
     *,
     experiment_id: str,
 ) -> dict[str, Path]:
     """
-    Fit each play-type classifier on the full dataset and save importances.
+    Fit each classifier on the full dataset and save importances.
 
-    Matches the full-data refit path used in ``play_type.predict``.
+    Matches the full-data refit path used in ``pipelines.predict``.
     """
     from src.data.loaders import load_play_type_dataset
     from src.models import iter_classifier_builders
@@ -149,7 +145,6 @@ def export_play_type_feature_importances(
         out_path = save_feature_importance(
             model,
             feature_names,
-            "play_type",
             model_key,
             experiment_id=experiment_id,
         )
