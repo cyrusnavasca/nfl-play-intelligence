@@ -54,7 +54,12 @@ BEST_MODEL_DIR = MODELING_ARTIFACTS_DIR / "best_model"
 # Model registry
 # ---------------------------------------------------------------------------
 
-MODEL_REGISTRY_KEYS: tuple[str, ...] = ("baseline", "random_forest", "xgboost")
+MODEL_REGISTRY_KEYS: tuple[str, ...] = (
+    "baseline",
+    "logistic_regression",
+    "random_forest",
+    "xgboost",
+)
 
 
 class ModelingParquetValidationError(ValueError):

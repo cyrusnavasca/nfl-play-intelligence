@@ -1,0 +1,23 @@
+# Random Forest experiment for play-type.
+# Run: python3 -m src.pipelines.run --config configs/models/random_forest.yaml
+#
+# Tune: edit values under models.random_forest (passed to
+# sklearn.ensemble.RandomForestClassifier). Common knobs:
+#   n_estimators, max_depth, min_samples_leaf, max_features, class_weight.
+
+name: random_forest
+description: Random forest on play-type.
+
+seed: 42
+n_folds: 5
+persist_best: false
+
+models:
+  random_forest:
+    n_estimators: 300
+    max_depth: null
+    min_samples_leaf: 5
+    max_features: sqrt
+    class_weight: balanced
+    random_state: 42
+    n_jobs: -1

@@ -46,6 +46,13 @@ from src.utils.experiments import (
 __all__ = ["run_pipeline"]
 
 
+def _write_experiment_notes(exp_id: str, note: str) -> None:
+    """Write a human-readable notes.md describing this run's intent."""
+    notes_path = resolve_artifacts_dir(experiment_id=exp_id) / "notes.md"
+    notes_path.parent.mkdir(parents=True, exist_ok=True)
+    notes_path.write_text(f"# {exp_id} — notes\n\n{note}\n", encoding="utf-8")
+
+
 def run_pipeline(
     *,
     config_path: Path | str | None = None,
@@ -53,6 +60,7 @@ def run_pipeline(
     skip_training: bool = False,
     persist_best: bool = False,
     experiment_id: str | None = None,
+    note: str | None = None,
 ) -> pd.DataFrame | None:
     """
     Run the play-type modeling pipeline end to end.
@@ -77,9 +85,15 @@ def run_pipeline(
     with use_experiment_profile(profile):
         snapshot = profile.to_snapshot_base(exp_id)
         snapshot["started_at"] = started_at
+        if note:
+            snapshot["notes"] = note
         write_experiment_config(exp_id, snapshot)
+        if note:
+            _write_experiment_notes(exp_id, note)
 
         print(f"Experiment:    {exp_id}")
+        if note:
+            print(f"Notes:         {note}")
         print(f"Profile:       {profile.name}")
         if profile.source_path is not None:
             print(f"Config:        {profile.source_path}")
@@ -141,6 +155,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip CV (requires existing artifacts)",
     )
+    parser.add_argument(
+        "--note",
+        help="Free-text description of this run; saved to config.yaml (notes) "
+        "and experiments/<id>/notes.md",
+    )
     return parser.parse_args()
 
 
@@ -151,6 +170,7 @@ def main() -> pd.DataFrame | None:
         skip_training=args.skip_training,
         persist_best=args.persist_best,
         experiment_id=args.experiment,
+        note=args.note,
     )
 
     print("\n=== Modeling pipeline complete ===")

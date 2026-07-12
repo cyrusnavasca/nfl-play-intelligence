@@ -1,0 +1,38 @@
+# Trimmed feature set: drops weather, venue/roof/surface, home/away, season type,
+# game-half, offense_formation, and a few situational/score features flagged in
+# notebook 02.
+# Dropped vs default: surface, roof, game_half, is_playoffs, season_type, is_home,
+# posteam_type, is_indoor, is_turf, temp, backed_up, score_differential, qtr,
+# offense_formation.
+
+name: trimmed
+description: Default minus venue/weather/home-away/season-type/offense_formation and select situational features.
+
+embedded_importance_threshold: 0.01
+
+numeric:
+  - game_seconds_remaining
+  - down
+  - ydstogo
+  - yardline_100
+  - defenders_in_box
+  - wind
+  - off_pass_rate_L3
+  - off_rush_yds_L3
+  - off_pass_yds_L3
+  - off_epa_L3
+  - off_rush_epa_L3
+  - off_pass_epa_L3
+  - def_rush_yds_allowed_L3
+  - def_pass_yds_allowed_L3
+  - def_epa_L3
+  - def_rush_epa_L3
+  - def_pass_epa_L3
+  - box_advantage
+  - time_adjusted_score_diff
+
+# Binary flags — categorical (one-hot encoded), not raw numerics.
+categorical:
+  - is_qb_in_gun
+  - red_zone
+  - two_minute_drill

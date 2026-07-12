@@ -107,6 +107,10 @@ DROP_ALWAYS: list[str] = sorted(
 # Candidate features
 # ---------------------------------------------------------------------------
 
+# Categorical features (one-hot encoded downstream). Multi-level nominal columns
+# plus binary flags (0/1). The binaries are kept here so they are treated as
+# categorical binaries rather than raw numerics. NOTE: box_advantage is NOT here
+# — it is a 16-level ordinal integer (count difference), kept numeric on purpose.
 CAT_FEATURES: list[str] = [
     "season_type",
     "posteam_type",
@@ -114,6 +118,14 @@ CAT_FEATURES: list[str] = [
     "roof",
     "surface",
     "offense_formation",
+    "is_qb_in_gun",
+    "red_zone",
+    "backed_up",
+    "two_minute_drill",
+    "is_turf",
+    "is_indoor",
+    "is_playoffs",
+    "is_home",
 ]
 
 RAW_NUMERIC: list[str] = [
@@ -141,34 +153,27 @@ ROLLING_FEATURES: list[str] = [
     "def_pass_epa_L3",
 ]
 
+# is_qb_in_gun is a formation feature too, but lives in CAT_FEATURES (encoded as
+# a categorical binary), so it is intentionally absent from this numeric group.
 FORMATION_FEATURES: list[str] = [
-    "is_qb_in_gun",
     "box_advantage",
 ]
 
+# Numeric situational features. The binary flags red_zone / backed_up /
+# two_minute_drill now live in CAT_FEATURES (categorical binaries).
 SITUATIONAL_FEATURES: list[str] = [
     "score_differential",
     "time_adjusted_score_diff",
-    "red_zone",
-    "backed_up",
-    "two_minute_drill",
 ]
 
-ENCODED_FEATURES: list[str] = [
-    "is_turf",
-    "is_indoor",
-    "is_playoffs",
-    "is_home",
-]
+# Previously held is_turf / is_indoor / is_playoffs / is_home as numerics; those
+# are now categorical binaries in CAT_FEATURES, so this group is empty.
+ENCODED_FEATURES: list[str] = []
 
-# Binary flags + discrete integers tested via chi-squared (Task 1 only).
-# Encoded binaries (is_turf, etc.) are excluded — raw categoricals cover them.
-CHI2_BINARY_FEATURES: list[str] = [
-    "is_qb_in_gun",
-    "red_zone",
-    "backed_up",
-    "two_minute_drill",
-]
+# Binary flags + discrete integers tested via chi-squared (notebook only). The
+# binary flags now live in CAT_FEATURES, so only the discrete integers remain
+# outside it; kept empty here to avoid double-counting categoricals.
+CHI2_BINARY_FEATURES: list[str] = []
 
 CHI2_DISCRETE_FEATURES: list[str] = [
     "down",

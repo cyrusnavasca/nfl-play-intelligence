@@ -41,17 +41,9 @@ numeric:
   - def_epa_L3
   - def_rush_epa_L3
   - def_pass_epa_L3
-  - is_qb_in_gun
-  - box_advantage
+  - box_advantage          # 16-level ordinal count difference; kept numeric
   - score_differential
   - time_adjusted_score_diff
-  - red_zone
-  - backed_up
-  - two_minute_drill
-  - is_turf
-  - is_indoor
-  - is_playoffs
-  - is_home
 
 categorical:
   - season_type
@@ -60,3 +52,11 @@ categorical:
   - roof
   - surface
   - offense_formation
+  - is_qb_in_gun
+  - red_zone
+  - backed_up
+  - two_minute_drill
+  - is_turf
+  - is_indoor
+  - is_playoffs
+  - is_home

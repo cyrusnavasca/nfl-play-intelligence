@@ -1,16 +1,39 @@
 """Shared fixtures for modeling validation tests."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.data.loaders import load_play_type_dataset
+from src.data.schema import MODEL_REGISTRY_KEYS, N_FOLDS, SEED
 from src.utils.experiment_profile import (
-    DEFAULT_PROFILE_PATH,
+    ExperimentProfile,
     load_experiment_profile,
     use_experiment_profile,
 )
 
 SUBSAMPLE_ROWS = 1_000
+
+# One profile per registry key lives under configs/models/<key>.yaml.
+_MODEL_CONFIG_PATHS = {
+    key: Path(f"configs/models/{key}.yaml") for key in MODEL_REGISTRY_KEYS
+}
+
+
+def _all_models_profile() -> ExperimentProfile:
+    """Merge every configs/models/<key>.yaml into one all-registry test profile."""
+    models: dict = {}
+    for key, path in _MODEL_CONFIG_PATHS.items():
+        models.update(load_experiment_profile(path).models)
+    return ExperimentProfile(
+        name="test_all_models",
+        description=None,
+        seed=SEED,
+        n_folds=N_FOLDS,
+        persist_best=False,
+        models=models,
+    )
 
 
 @pytest.fixture(scope="session")
@@ -25,11 +48,8 @@ def play_type_subsample() -> tuple:
 
 @pytest.fixture(autouse=True)
 def default_experiment_profile():
-    """Activate the baseline profile so builders resolve hyperparameters in tests."""
-    if not DEFAULT_PROFILE_PATH.exists():
-        yield None
-        return
-    profile = load_experiment_profile(DEFAULT_PROFILE_PATH)
+    """Activate an all-registry profile so builders resolve hyperparameters in tests."""
+    profile = _all_models_profile()
     with use_experiment_profile(profile):
         yield profile
 

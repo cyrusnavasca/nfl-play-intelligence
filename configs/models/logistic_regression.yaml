@@ -1,0 +1,24 @@
+# Logistic Regression experiment for play-type.
+# Run: python3 -m src.pipelines.run --config configs/models/logistic_regression.yaml
+#
+# Features are standardized (StandardScaler) inside the model before the fit.
+# Tune: edit values under models.logistic_regression (passed to
+# sklearn.linear_model.LogisticRegression). Common knobs:
+#   C (inverse reg. strength), solver (lbfgs/liblinear/saga),
+#   class_weight (null/balanced), max_iter, l1_ratio (0=l2 ... 1=l1).
+# (penalty is deprecated in recent sklearn; use l1_ratio instead.)
+
+name: logistic_regression
+description: Standard-scaled logistic regression on play-type.
+
+seed: 42
+n_folds: 5
+persist_best: false
+
+models:
+  logistic_regression:
+    C: 1.0
+    solver: lbfgs
+    max_iter: 1000
+    class_weight: null
+    random_state: 42

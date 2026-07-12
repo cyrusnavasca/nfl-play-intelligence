@@ -1,21 +1,32 @@
 """Static model hyperparameter config loading."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.models.config import load_model_hyperparameters, snapshot_hyperparameters
+from src.utils.experiment_profile import load_experiment_profile, use_experiment_profile
 
 
 def test_load_xgboost_config() -> None:
-    params = load_model_hyperparameters("xgboost")
+    profile = load_experiment_profile(Path("configs/models/xgboost.yaml"))
+    with use_experiment_profile(profile):
+        params = load_model_hyperparameters("xgboost")
     assert params["n_estimators"] == 300
     assert params["max_depth"] == 6
     assert params["random_state"] == 42
 
 
-def test_snapshot_includes_all_registry_keys() -> None:
-    snapshot = snapshot_hyperparameters()
-    assert set(snapshot) == {"baseline", "random_forest", "xgboost"}
+def test_snapshot_uses_provided_models_config() -> None:
+    models_config = {
+        "baseline": {"strategy": "prior"},
+        "logistic_regression": {"C": 1.0},
+        "random_forest": {"n_estimators": 300},
+        "xgboost": {"max_depth": 6},
+    }
+    snapshot = snapshot_hyperparameters(models_config)
+    assert set(snapshot) == set(models_config)
     assert snapshot["baseline"]["hyperparameters"]["strategy"] == "prior"
 
 

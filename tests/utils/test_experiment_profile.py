@@ -15,19 +15,28 @@ from src.utils.experiment_profile import (
 
 def test_load_default_profile() -> None:
     profile = load_experiment_profile(DEFAULT_PROFILE_PATH)
-    assert profile.name == "default"
-    assert profile.model_keys() == (
-        "baseline",
-        "random_forest",
-        "xgboost",
-    )
-    assert profile.model_hyperparameters("xgboost")["n_estimators"] == 300
+    assert profile.name == "baseline"
+    assert profile.model_keys() == ("baseline",)
+    assert profile.model_hyperparameters("baseline")["strategy"] == "prior"
 
 
-def test_xgboost_tuned_profile_subsets_models() -> None:
-    profile = load_experiment_profile(Path("configs/models/xgboost_tuned.yaml"))
-    assert profile.model_keys() == ("baseline", "xgboost")
-    assert profile.model_hyperparameters("xgboost")["max_depth"] == 8
+@pytest.mark.parametrize(
+    "config, key",
+    [
+        ("configs/models/baseline.yaml", "baseline"),
+        ("configs/models/logistic_regression.yaml", "logistic_regression"),
+        ("configs/models/random_forest.yaml", "random_forest"),
+        ("configs/models/xgboost.yaml", "xgboost"),
+    ],
+)
+def test_model_profiles_load_single_model(config: str, key: str) -> None:
+    profile = load_experiment_profile(Path(config))
+    assert profile.model_keys() == (key,)
+
+
+def test_xgboost_profile_hyperparameters() -> None:
+    profile = load_experiment_profile(Path("configs/models/xgboost.yaml"))
+    assert profile.model_hyperparameters("xgboost")["max_depth"] == 6
 
 
 def test_validate_rejects_unknown_model_key() -> None:
@@ -47,12 +56,8 @@ def test_validate_rejects_missing_models() -> None:
 
 
 def test_use_experiment_profile_context() -> None:
-    profile = load_experiment_profile(DEFAULT_PROFILE_PATH)
+    profile = load_experiment_profile(Path("configs/models/xgboost.yaml"))
     from src.models.config import load_model_hyperparameters
-    from src.utils.experiment_profile import get_active_profile_or_none
-
-    assert get_active_profile_or_none() is not None
-    assert load_model_hyperparameters("baseline")["strategy"] == "prior"
 
     with use_experiment_profile(profile):
         assert load_model_hyperparameters("xgboost")["max_depth"] == 6

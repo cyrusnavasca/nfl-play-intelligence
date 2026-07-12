@@ -27,7 +27,7 @@ __all__ = [
     "validate_experiment_profile",
 ]
 
-DEFAULT_PROFILE_PATH = Path("configs/models/default.yaml")
+DEFAULT_PROFILE_PATH = Path("configs/models/baseline.yaml")
 
 _active_profile: ExperimentProfile | None = None
 

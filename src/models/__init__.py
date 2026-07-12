@@ -14,6 +14,7 @@ from sklearn.base import ClassifierMixin
 
 from src.data.schema import MODEL_REGISTRY_KEYS
 from src.models.base import build_baseline_classifier
+from src.models.logistic_regression import build_lr_classifier
 from src.models.random_forest import build_rf_classifier
 from src.models.xgboost import build_xgb_classifier
 from src.utils.experiment_profile import get_active_profile_or_none
@@ -21,6 +22,7 @@ from src.utils.experiment_profile import get_active_profile_or_none
 __all__ = [
     "CLASSIFIER_BUILDERS",
     "build_baseline_classifier",
+    "build_lr_classifier",
     "build_rf_classifier",
     "build_xgb_classifier",
     "hyperparameters_from_experiment_config",
@@ -29,6 +31,7 @@ __all__ = [
 
 CLASSIFIER_BUILDERS: dict[str, Callable[[], ClassifierMixin]] = {
     "baseline": build_baseline_classifier,
+    "logistic_regression": build_lr_classifier,
     "random_forest": build_rf_classifier,
     "xgboost": build_xgb_classifier,
 }
