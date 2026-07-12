@@ -4,9 +4,9 @@ End-to-end modeling orchestrator.
 Runs play-type CV and optional best-model persistence in a single command.
 
 Usage (from project root):
-    python3 -m src.pipelines.run --config configs/default.yaml
-    python3 -m src.pipelines.run --config configs/xgboost_tuned.yaml --persist-best
-    python3 -m src.pipelines.run --config configs/default.yaml --experiment exp_003
+    python3 -m src.pipelines.run --config configs/models/default.yaml
+    python3 -m src.pipelines.run --config configs/models/xgboost_tuned.yaml --persist-best
+    python3 -m src.pipelines.run --config configs/models/default.yaml --experiment exp_003
 """
 from __future__ import annotations
 

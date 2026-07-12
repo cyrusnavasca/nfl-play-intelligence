@@ -1,5 +1,9 @@
 """
-Task 1 — embedded feature selection via cross-validated LightGBM gain importance.
+Embedded feature selection via cross-validated LightGBM gain importance.
+
+Consumes the manual feature lists from the feature config (no filter stage) and
+produces mean per-fold gain importance for each numeric feature and one-hot
+categorical dummy.
 
 Usage (from project root):
     python3 -m src.selection.embedded
@@ -13,7 +17,6 @@ import lightgbm as lgb
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 
-from src.selection.univariate import PlayTypeUnivariateResults
 from src.selection.shared.common import (
     LGBM_PARAMS,
     N_FOLDS,
@@ -21,23 +24,20 @@ from src.selection.shared.common import (
     _importance_dataframe,
     _median_impute_train_test,
     binary_play_type,
-    chi2_significant_categoricals,
     ensure_artifacts_dir,
     load_features_full,
-    passes_univariate_gate,
 )
 from src.selection.shared.feature_schema import (
     DROP_ALWAYS,
     SEED,
     TARGET_CLF,
     TASK1_EMBEDDED_CSV,
-    validate_feature_schema,
 )
 
 
 @dataclass(frozen=True)
 class PlayTypeEmbeddedResults:
-    """Container for Task 1 embedded selection outputs."""
+    """Container for embedded selection outputs."""
 
     task1: pd.DataFrame
 
@@ -54,7 +54,7 @@ def build_task1_feature_matrix(
     cat_cols: list[str],
 ) -> pd.DataFrame:
     """Raw numerics plus one-hot encoded categoricals (impute inside CV)."""
-    _assert_no_excluded(numeric_cols + cat_cols, "task1 feature matrix")
+    _assert_no_excluded(numeric_cols + cat_cols, "feature matrix")
 
     parts = [df[numeric_cols].copy()]
     if cat_cols:
@@ -65,16 +65,12 @@ def build_task1_feature_matrix(
     return pd.concat(parts, axis=1)
 
 
-def task1_embedded_importance(
+def embedded_importance(
     df: pd.DataFrame,
-    univariate_results: PlayTypeUnivariateResults,
+    numeric_cols: list[str],
+    cat_cols: list[str],
 ) -> pd.DataFrame:
     """5-fold stratified CV LightGBM classifier; average gain importance."""
-    numeric_cols = passes_univariate_gate(
-        univariate_results.task1_numeric, mi_col="mi_clf"
-    )
-    cat_cols = chi2_significant_categoricals(univariate_results.chi2)
-
     X = build_task1_feature_matrix(df, numeric_cols, cat_cols)
     y = binary_play_type(df[TARGET_CLF])
 
@@ -98,44 +94,42 @@ def task1_embedded_importance(
     return _importance_dataframe(dict(accum))
 
 
-def run_task1_embedded(
+def run_embedded(
     df: pd.DataFrame,
-    univariate_results: PlayTypeUnivariateResults,
+    numeric_cols: list[str],
+    cat_cols: list[str],
 ) -> PlayTypeEmbeddedResults:
-    """Run Task 1 embedded selection."""
-    validate_feature_schema(df.columns.tolist())
-
-    task1_df = task1_embedded_importance(df, univariate_results)
-
+    """Run embedded selection on the manually selected features."""
+    task1_df = embedded_importance(df, numeric_cols, cat_cols)
     return PlayTypeEmbeddedResults(task1=task1_df)
 
 
-def write_task1_embedded_artifacts(results: PlayTypeEmbeddedResults) -> None:
-    """Write Task 1 embedded importance CSV."""
+def write_embedded_artifacts(results: PlayTypeEmbeddedResults) -> None:
+    """Write embedded importance CSV."""
     ensure_artifacts_dir()
     results.task1.to_csv(TASK1_EMBEDDED_CSV, index=False)
 
 
 def main() -> PlayTypeEmbeddedResults:
-    from src.selection.univariate import run_task1_univariate
+    from src.selection.feature_config import load_feature_config
 
     df = load_features_full()
     print(f"[INFO] Loaded features_full: {df.shape}")
 
-    print("[INFO] Running Task 1 univariate selection...")
-    univariate_results = run_task1_univariate(df)
-
-    print("[INFO] Running Task 1 embedded selection...")
-    results = run_task1_embedded(df, univariate_results)
-    write_task1_embedded_artifacts(results)
-
-    t1_norm_sum = results.task1["embedded_importance_norm"].sum()
-    print(f"[DONE] task1 embedded → {TASK1_EMBEDDED_CSV} (norm sum={t1_norm_sum:.4f})")
-
-    print("\nTop 10 Task 1 (embedded_importance_norm):")
+    cfg = load_feature_config()
     print(
-        results.task1.head(10).to_string(index=False, float_format="{:.4f}".format)
+        f"[INFO] Feature config '{cfg.name}': "
+        f"{len(cfg.numeric)} numeric + {len(cfg.categorical)} categorical"
     )
+
+    results = run_embedded(df, cfg.numeric, cfg.categorical)
+    write_embedded_artifacts(results)
+
+    norm_sum = results.task1["embedded_importance_norm"].sum()
+    print(f"[DONE] embedded importance → {TASK1_EMBEDDED_CSV} (norm sum={norm_sum:.4f})")
+
+    print("\nTop 10 (embedded_importance_norm):")
+    print(results.task1.head(10).to_string(index=False, float_format="{:.4f}".format))
 
     return results
 

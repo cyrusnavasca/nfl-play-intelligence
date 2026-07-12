@@ -1,0 +1,62 @@
+# Manual feature selection for the play-type modeling task.
+#
+# These lists are the ONLY source of which candidate features enter the pipeline.
+# Edit them by hand based on the analysis in notebooks/02_feat_selection.ipynb
+# (correlation/VIF, mutual information, ANOVA F-test, chi-square). Delete a line
+# to drop that feature — there is no automated filter/threshold stage.
+#
+# Selected features then feed the embedded (cross-validated LightGBM gain) stage,
+# which prunes further using `embedded_importance_norm` (see the threshold below).
+#
+# Rules (validated on load, see src/selection/feature_config.py):
+#   - `numeric` must be a subset of ALL_NUMERIC in feature_schema.py
+#   - `categorical` must be a subset of CAT_FEATURES in feature_schema.py
+#   - no DROP_ALWAYS (leaky) columns; at least one feature total
+
+name: default
+description: All candidate features; edit to drop features before embedded selection.
+
+# Embedded gain gate applied after LightGBM: keep features whose mean normalized
+# gain importance is >= this value. Set to 0.0 to disable embedded pruning
+# (manual list becomes the final feature set).
+embedded_importance_threshold: 0.01
+
+numeric:
+  - qtr
+  - game_seconds_remaining
+  - down
+  - ydstogo
+  - yardline_100
+  - defenders_in_box
+  - temp
+  - wind
+  - off_pass_rate_L3
+  - off_rush_yds_L3
+  - off_pass_yds_L3
+  - off_epa_L3
+  - off_rush_epa_L3
+  - off_pass_epa_L3
+  - def_rush_yds_allowed_L3
+  - def_pass_yds_allowed_L3
+  - def_epa_L3
+  - def_rush_epa_L3
+  - def_pass_epa_L3
+  - is_qb_in_gun
+  - box_advantage
+  - score_differential
+  - time_adjusted_score_diff
+  - red_zone
+  - backed_up
+  - two_minute_drill
+  - is_turf
+  - is_indoor
+  - is_playoffs
+  - is_home
+
+categorical:
+  - season_type
+  - posteam_type
+  - game_half
+  - roof
+  - surface
+  - offense_formation

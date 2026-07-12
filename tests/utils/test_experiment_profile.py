@@ -25,7 +25,7 @@ def test_load_default_profile() -> None:
 
 
 def test_xgboost_tuned_profile_subsets_models() -> None:
-    profile = load_experiment_profile(Path("configs/xgboost_tuned.yaml"))
+    profile = load_experiment_profile(Path("configs/models/xgboost_tuned.yaml"))
     assert profile.model_keys() == ("baseline", "xgboost")
     assert profile.model_hyperparameters("xgboost")["max_depth"] == 8
 

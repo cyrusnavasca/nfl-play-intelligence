@@ -22,24 +22,27 @@ ARTIFACTS_DIR = Path("artifacts/feature_importance")
 
 PLAY_TYPE_MODELING_PARQUET_PATH = PROCESSED_DIR / "play_type_modeling.parquet"
 
-CHI2_SCREENING_CSV = ARTIFACTS_DIR / "chi2_categorical_screening.csv"
-TASK1_NUMERIC_SCREENING_CSV = ARTIFACTS_DIR / "task1_numeric_screening.csv"
+# Manual feature-selection configs (the only source of which features enter
+# the pipeline; see configs/features/default.yaml + src/selection/feature_config.py).
+FEATURES_CONFIG_DIR = Path("configs/features")
+DEFAULT_FEATURES_CONFIG = FEATURES_CONFIG_DIR / "default.yaml"
+
 TASK1_EMBEDDED_CSV = ARTIFACTS_DIR / "task1_embedded_importance.csv"
 FEATURE_SELECTION_MANIFEST_PATH = ARTIFACTS_DIR / "feature_selection_manifest.json"
 
 # ---------------------------------------------------------------------------
-# Reproducibility & selection thresholds
+# Reproducibility & embedded selection threshold
 # ---------------------------------------------------------------------------
+#
+# Filter-based screening (Spearman / mutual information / chi-square) is no
+# longer applied automatically — features are chosen by hand in the feature
+# config. The notebook (02_feat_selection.ipynb) covers those statistics for
+# reference. Only the embedded (LightGBM gain) gate remains, and its threshold
+# is set per feature config (`embedded_importance_threshold`), defaulting here.
 
 SEED = 42
 
-SP_THRESHOLD = 0.02
-MI_THRESHOLD = 0.001
 EMBEDDED_THRESHOLD = 0.01
-
-CHI2_P_THRESHOLD = 0.05
-MIN_SPEARMAN_ROWS = 100
-MI_N_NEIGHBORS = 5
 
 # ---------------------------------------------------------------------------
 # Target

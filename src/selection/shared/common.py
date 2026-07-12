@@ -1,31 +1,23 @@
 """
-Shared helpers for both play-type and yards-gained selection tasks.
+Shared helpers for play-type feature selection.
 
-Column lists and thresholds live in ``feature_schema`` only.
+Column lists and thresholds live in ``feature_schema`` only. Filter-based
+screening (Spearman / mutual information / chi-square) is intentionally absent —
+features are chosen by hand in the feature config; the notebook covers those
+statistics for reference. Only the embedded (LightGBM gain) stage remains.
 """
 from __future__ import annotations
 
 import lightgbm as lgb
-import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
-from sklearn.feature_selection import mutual_info_classif
 from sklearn.impute import SimpleImputer
 
 from src.selection.shared.feature_schema import (
-    ALL_NUMERIC,
     ARTIFACTS_DIR,
-    CAT_FEATURES,
-    CHI2_P_THRESHOLD,
     DROP_ALWAYS,
     EMBEDDED_THRESHOLD,
     FEATURES_FULL_PATH,
-    MI_N_NEIGHBORS,
-    MI_THRESHOLD,
-    MIN_SPEARMAN_ROWS,
     SEED,
-    SP_THRESHOLD,
-    TARGET_CLF,
 )
 
 # ---------------------------------------------------------------------------
@@ -64,7 +56,7 @@ def ensure_artifacts_dir() -> None:
 
 
 def binary_play_type(series: pd.Series) -> pd.Series:
-    """Encode play_type as pass=1, run=0 (matches notebook Cell 8)."""
+    """Encode play_type as pass=1, run=0."""
     return (series == "pass").astype(int)
 
 
@@ -88,12 +80,6 @@ def _assert_no_drop_always(columns: list[str], context: str) -> None:
 # ---------------------------------------------------------------------------
 # Imputation
 # ---------------------------------------------------------------------------
-
-
-def median_impute_numeric(df: pd.DataFrame) -> np.ndarray:
-    """Median-impute ALL_NUMERIC columns (handles week-1 rolling NaNs)."""
-    imp = SimpleImputer(strategy="median")
-    return imp.fit_transform(df[ALL_NUMERIC])
 
 
 def median_impute_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -122,30 +108,8 @@ def _median_impute_train_test(
 
 
 # ---------------------------------------------------------------------------
-# Gates
+# Embedded gate
 # ---------------------------------------------------------------------------
-
-
-def chi2_significant_features(chi2_df: pd.DataFrame) -> list[str]:
-    """Categorical features significant at CHI2_P_THRESHOLD (Task 1 gate input)."""
-    passed = chi2_df.loc[chi2_df["p_value"] < CHI2_P_THRESHOLD, "feature"]
-    return passed.tolist()
-
-
-def chi2_significant_categoricals(chi2_df: pd.DataFrame) -> list[str]:
-    """χ²-significant raw categoricals only (exclude binary/discrete numerics)."""
-    passed = set(chi2_significant_features(chi2_df))
-    return [col for col in CAT_FEATURES if col in passed]
-
-
-def passes_univariate_gate(screen_df: pd.DataFrame, *, mi_col: str) -> list[str]:
-    """
-    Numeric features passing Spearman OR MI threshold (Stage 1 gate input).
-
-    Keeps a feature when ``abs_rho >= SP_THRESHOLD`` or ``mi >= MI_THRESHOLD``.
-    """
-    mask = (screen_df["abs_rho"] >= SP_THRESHOLD) | (screen_df[mi_col] >= MI_THRESHOLD)
-    return screen_df.loc[mask].index.tolist()
 
 
 def passes_embedded_gate(
@@ -155,10 +119,10 @@ def passes_embedded_gate(
     threshold: float = EMBEDDED_THRESHOLD,
 ) -> list[str]:
     """
-    Univariate-passing numerics that also meet the embedded gain threshold.
+    Numeric features whose mean normalized gain meets the embedded threshold.
 
     Only rows whose ``feature`` is in *numeric_cols* are considered; one-hot
-    categoricals are excluded from this gate.
+    categorical dummies are handled by ``categorical_passes_embedded_gate``.
     """
     eligible = set(numeric_cols)
     passed = embedded_df.loc[
@@ -169,105 +133,34 @@ def passes_embedded_gate(
     return passed.tolist()
 
 
-# ---------------------------------------------------------------------------
-# Univariate stats
-# ---------------------------------------------------------------------------
-
-
-def spearman_numeric_screening(
-    df: pd.DataFrame,
+def categorical_passes_embedded_gate(
+    embedded_df: pd.DataFrame,
+    cat_cols: list[str],
     *,
-    target_col: str,
-    y: pd.Series | None = None,
-) -> pd.DataFrame:
+    threshold: float = EMBEDDED_THRESHOLD,
+) -> list[str]:
     """
-    Pairwise Spearman correlation for each ALL_NUMERIC column vs. target.
+    Categoricals whose one-hot dummies' summed normalized gain meets the gate.
 
-    Drops NaN pairwise per feature; returns NaN stats if fewer than
-    MIN_SPEARMAN_ROWS valid rows.
+    Dummy columns are named ``"<cat>_<level>"`` (see ``build_task1_feature_matrix``);
+    a categorical is kept when the total importance across its dummies >= threshold.
     """
-    _assert_no_excluded(ALL_NUMERIC, "spearman screening")
-
-    rows: list[dict[str, object]] = []
-    for col in ALL_NUMERIC:
-        if y is not None:
-            sub = df[[col]].join(y).dropna()
-            target_values = sub[target_col]
-        else:
-            sub = df[[col, target_col]].dropna()
-            target_values = sub[target_col]
-
-        if len(sub) < MIN_SPEARMAN_ROWS:
-            rows.append(
-                {
-                    "feature": col,
-                    "spearman_rho": np.nan,
-                    "abs_rho": np.nan,
-                    "p_value": np.nan,
-                }
-            )
-            continue
-
-        rho, p = spearmanr(sub[col], target_values)
-        rows.append(
-            {
-                "feature": col,
-                "spearman_rho": rho,
-                "abs_rho": abs(rho),
-                "p_value": p,
-            }
-        )
-
-    return pd.DataFrame(rows).set_index("feature")
-
-
-def combine_numeric_screening(
-    spearman_df: pd.DataFrame,
-    mi: pd.Series,
-    *,
-    mi_col: str,
-) -> pd.DataFrame:
-    """
-    Min-max normalize abs_rho and MI to [0, 1], then equal-weight average.
-
-    Normalization matches the notebook: divide each column by its max.
-    """
-    mi_norm_col = f"{mi_col}_norm"
-    screen = (
-        spearman_df[["spearman_rho", "abs_rho", "p_value"]]
-        .join(mi.rename(mi_col))
-        .assign(
-            **{
-                mi_norm_col: lambda d: d[mi_col] / d[mi_col].max(),
-                "abs_rho_norm": lambda d: d["abs_rho"] / d["abs_rho"].max(),
-            }
-        )
-        .assign(
-            combined_score=lambda d: 0.5 * d["abs_rho_norm"] + 0.5 * d[mi_norm_col]
-        )
-        .sort_values("combined_score", ascending=False)
+    kept: list[str] = []
+    importance = dict(
+        zip(embedded_df["feature"], embedded_df["embedded_importance_norm"])
     )
-    return screen
-
-
-def task1_numeric_screening(df: pd.DataFrame, X_imp: np.ndarray) -> pd.DataFrame:
-    """Spearman + classification MI combined table for play_type."""
-    y_clf = binary_play_type(df[TARGET_CLF])
-    y_clf.name = TARGET_CLF
-
-    sp_df = spearman_numeric_screening(df, target_col=TARGET_CLF, y=y_clf)
-    mi_clf = mutual_info_classif(
-        X_imp,
-        y_clf,
-        random_state=SEED,
-        n_neighbors=MI_N_NEIGHBORS,
-    )
-    mi_s = pd.Series(mi_clf, index=ALL_NUMERIC)
-    return combine_numeric_screening(sp_df, mi_s, mi_col="mi_clf")
+    for cat in cat_cols:
+        prefix = f"{cat}_"
+        total = sum(
+            imp for name, imp in importance.items() if name.startswith(prefix)
+        )
+        if total >= threshold:
+            kept.append(cat)
+    return kept
 
 
 # ---------------------------------------------------------------------------
-# Embedded helpers
+# Embedded importance helpers
 # ---------------------------------------------------------------------------
 
 

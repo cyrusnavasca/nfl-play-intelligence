@@ -1,7 +1,7 @@
 """
 Experiment profile loading and active-run context.
 
-Profiles live at ``configs/<profile>.yaml`` and describe which models to train
+Profiles live at ``configs/models/<profile>.yaml`` and describe which models to train
 plus their hyperparameters. The runner copies the resolved profile into
 ``artifacts/modeling/experiments/<id>/config.yaml`` at run start.
 """
@@ -27,7 +27,7 @@ __all__ = [
     "validate_experiment_profile",
 ]
 
-DEFAULT_PROFILE_PATH = Path("configs/default.yaml")
+DEFAULT_PROFILE_PATH = Path("configs/models/default.yaml")
 
 _active_profile: ExperimentProfile | None = None
 
