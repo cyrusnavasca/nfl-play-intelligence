@@ -53,6 +53,55 @@ def _write_experiment_notes(exp_id: str, note: str) -> None:
     notes_path.write_text(f"# {exp_id} — notes\n\n{note}\n", encoding="utf-8")
 
 
+def _run_tuning(profile: ExperimentProfile, exp_id: str) -> dict:
+    """
+    Run an Optuna study for every model with a search space and update the
+    profile's fixed hyperparameters in place with the best params found.
+
+    Writes per-model trial CSVs to the experiment dir and returns a summary.
+    """
+    from src.data.loaders import load_play_type_dataset
+    from src.pipelines.tune import DEFAULT_CV_FOLDS, DEFAULT_N_TRIALS, tune_model
+
+    tune_cfg = profile.tune
+    n_trials = int(tune_cfg.get("n_trials", DEFAULT_N_TRIALS))
+    cv_folds = int(tune_cfg.get("cv_folds", DEFAULT_CV_FOLDS))
+    subsample_rows = tune_cfg.get("subsample_rows")
+
+    X, y = load_play_type_dataset()
+    out_dir = resolve_artifacts_dir(experiment_id=exp_id)
+    summary: dict[str, dict] = {}
+
+    for model_key in profile.model_keys():
+        if not profile.has_search_space(model_key):
+            continue
+        print(f"[tune] {model_key}: {n_trials} trials (TPE)...")
+        result = tune_model(
+            model_key,
+            X,
+            y,
+            fixed_params=profile.model_hyperparameters(model_key),
+            search_space=profile.search_space(model_key),
+            n_trials=n_trials,
+            cv_folds=cv_folds,
+            seed=profile.seed,
+            subsample_rows=subsample_rows,
+        )
+        # Update the profile in place so downstream CV uses the best params.
+        profile.models[model_key].clear()
+        profile.models[model_key].update(result.best_params)
+
+        result.trials.to_csv(out_dir / f"tuning_{model_key}.csv", index=False)
+        summary[model_key] = {
+            "n_trials": result.n_trials,
+            "best_value": result.best_value,
+            "best_params": result.best_params,
+        }
+        print(f"[tune] {model_key}: best roc_auc={result.best_value:.4f}")
+
+    return summary
+
+
 def run_pipeline(
     *,
     config_path: Path | str | None = None,
@@ -61,6 +110,7 @@ def run_pipeline(
     persist_best: bool = False,
     experiment_id: str | None = None,
     note: str | None = None,
+    tune: bool = False,
 ) -> pd.DataFrame | None:
     """
     Run the play-type modeling pipeline end to end.
@@ -100,6 +150,11 @@ def run_pipeline(
         print("[1/3] Validating modeling parquet...")
         validate_modeling_parquet(PLAY_TYPE_MODELING_PARQUET_PATH)
         print("  OK")
+
+        if tune:
+            tuning_summary = _run_tuning(profile, exp_id)
+            if tuning_summary:
+                update_experiment_config(exp_id, {"tuning": tuning_summary})
 
         if not skip_training:
             print("[2/3] Play-type cross-validation...")
@@ -160,6 +215,11 @@ def _parse_args() -> argparse.Namespace:
         help="Free-text description of this run; saved to config.yaml (notes) "
         "and experiments/<id>/notes.md",
     )
+    parser.add_argument(
+        "--tune",
+        action="store_true",
+        help="Run Optuna search for models with a 'search' block before CV",
+    )
     return parser.parse_args()
 
 
@@ -171,6 +231,7 @@ def main() -> pd.DataFrame | None:
         persist_best=args.persist_best,
         experiment_id=args.experiment,
         note=args.note,
+        tune=args.tune,
     )
 
     print("\n=== Modeling pipeline complete ===")

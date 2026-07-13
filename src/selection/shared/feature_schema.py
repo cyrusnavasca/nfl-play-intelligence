@@ -36,7 +36,7 @@ FEATURE_SELECTION_MANIFEST_PATH = ARTIFACTS_DIR / "feature_selection_manifest.js
 #
 # Filter-based screening (Spearman / mutual information / chi-square) is no
 # longer applied automatically — features are chosen by hand in the feature
-# config. The notebook (02_feat_selection.ipynb) covers those statistics for
+# config. The notebook (02_feature_selection.ipynb) covers those statistics for
 # reference. Only the embedded (LightGBM gain) gate remains, and its threshold
 # is set per feature config (`embedded_importance_threshold`), defaulting here.
 

@@ -39,6 +39,29 @@ def test_xgboost_profile_hyperparameters() -> None:
     assert profile.model_hyperparameters("xgboost")["max_depth"] == 6
 
 
+def test_tuned_profile_parses_search_space() -> None:
+    profile = load_experiment_profile(Path("configs/models/xgboost_tuned.yaml"))
+    assert profile.has_search_space("xgboost")
+    # 'search' is split out of the fixed hyperparameters.
+    assert "search" not in profile.model_hyperparameters("xgboost")
+    assert profile.model_hyperparameters("xgboost")["eval_metric"] == "logloss"
+    space = profile.search_space("xgboost")
+    assert space["max_depth"]["type"] == "int"
+    assert space["learning_rate"]["log"] is True
+    assert isinstance(profile.tune["n_trials"], int)
+
+
+def test_validate_rejects_bad_search_spec() -> None:
+    with pytest.raises(ValueError, match="search param"):
+        validate_experiment_profile(
+            {
+                "models": {
+                    "xgboost": {"search": {"max_depth": {"low": 3, "high": 9}}},
+                }
+            }
+        )
+
+
 def test_validate_rejects_unknown_model_key() -> None:
     with pytest.raises(ValueError, match="unknown model key"):
         validate_experiment_profile(

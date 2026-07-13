@@ -8,7 +8,7 @@ plus their hyperparameters. The runner copies the resolved profile into
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -43,9 +43,18 @@ class ExperimentProfile:
     persist_best: bool
     models: dict[str, dict[str, Any]]
     source_path: Path | None = None
+    # Optuna hyperparameter search: study settings + per-model search spaces.
+    tune: dict[str, Any] = field(default_factory=dict)
+    search_spaces: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
 
     def model_keys(self) -> tuple[str, ...]:
         return tuple(self.models)
+
+    def has_search_space(self, model_key: str) -> bool:
+        return bool(self.search_spaces.get(model_key))
+
+    def search_space(self, model_key: str) -> dict[str, dict[str, Any]]:
+        return dict(self.search_spaces.get(model_key, {}))
 
     def model_hyperparameters(self, model_key: str) -> dict[str, Any]:
         try:
@@ -102,6 +111,45 @@ def validate_experiment_profile(raw: dict[str, Any], *, source: str = "profile")
             raise ValueError(
                 f"{source} model {model_key!r} hyperparameters must be a mapping"
             )
+        if "search" in hyperparameters:
+            _validate_search_space(
+                hyperparameters["search"],
+                source=f"{source} model {model_key!r}",
+            )
+
+    tune = raw.get("tune")
+    if tune is not None and not isinstance(tune, dict):
+        raise ValueError(f"{source} 'tune' must be a mapping")
+
+
+_SEARCH_DISTRIBUTIONS = {"int", "float", "categorical"}
+
+
+def _validate_search_space(search: Any, *, source: str) -> None:
+    """Validate a per-model ``search`` block of Optuna distribution specs."""
+    if not isinstance(search, dict) or not search:
+        raise ValueError(f"{source} 'search' must be a non-empty mapping")
+
+    for param, spec in search.items():
+        if not isinstance(spec, dict) or "type" not in spec:
+            raise ValueError(
+                f"{source} search param {param!r} must be a mapping with a 'type'"
+            )
+        dist = spec["type"]
+        if dist not in _SEARCH_DISTRIBUTIONS:
+            raise ValueError(
+                f"{source} search param {param!r} has unknown type {dist!r}; "
+                f"expected one of {sorted(_SEARCH_DISTRIBUTIONS)}"
+            )
+        if dist in {"int", "float"}:
+            if "low" not in spec or "high" not in spec:
+                raise ValueError(
+                    f"{source} search param {param!r} ({dist}) needs 'low' and 'high'"
+                )
+        elif "choices" not in spec:
+            raise ValueError(
+                f"{source} search param {param!r} (categorical) needs 'choices'"
+            )
 
 
 def load_experiment_profile(path: str | Path) -> ExperimentProfile:
@@ -114,10 +162,20 @@ def load_experiment_profile(path: str | Path) -> ExperimentProfile:
     validate_experiment_profile(raw, source=str(profile_path))
 
     name = str(raw.get("name") or profile_path.stem)
-    models = {
-        str(model_key): dict(hyperparameters)
-        for model_key, hyperparameters in raw["models"].items()
-    }
+
+    # Split each model block into fixed hyperparameters and an optional Optuna
+    # search space (kept separate so builders never receive the search spec).
+    models: dict[str, dict[str, Any]] = {}
+    search_spaces: dict[str, dict[str, dict[str, Any]]] = {}
+    for model_key, block in raw["models"].items():
+        block = dict(block)
+        search = block.pop("search", None)
+        models[str(model_key)] = block
+        if search:
+            search_spaces[str(model_key)] = {
+                str(param): dict(spec) for param, spec in search.items()
+            }
+
     return ExperimentProfile(
         name=name,
         description=str(raw["description"]) if raw.get("description") else None,
@@ -126,6 +184,8 @@ def load_experiment_profile(path: str | Path) -> ExperimentProfile:
         persist_best=bool(raw.get("persist_best", False)),
         models=models,
         source_path=profile_path,
+        tune=dict(raw.get("tune") or {}),
+        search_spaces=search_spaces,
     )
 
 

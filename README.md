@@ -57,7 +57,7 @@ python3 -m src.pipelines.run --config configs/models/default.yaml --skip-trainin
 ```
 
 **Choosing features** — edit `configs/features/default.yaml` by hand (guided by
-`notebooks/02_feat_selection.ipynb`: VIF, MI, ANOVA, chi-square). Delete a line
+`notebooks/02_feature_selection.ipynb`: VIF, MI, ANOVA, chi-square). Delete a line
 to drop a feature. Survivors go through embedded LightGBM pruning at
 `embedded_importance_threshold` (set `0.0` to keep the manual list as-is).
 
@@ -87,7 +87,7 @@ src/
 configs/
 ├── features/       manual feature lists (default.yaml) -> selection
 └── models/         experiment profiles (default.yaml, xgboost_tuned.yaml)
-notebooks/          01_eda, 02_feat_selection (screening)
+notebooks/          01_data_exploration, 02_feature_selection, 03_model_evaluation
 artifacts/modeling/ experiments/<id>/, best_model/, active.json
 docs/               design + handoff notes (see modeling_plan.md first)
 ```

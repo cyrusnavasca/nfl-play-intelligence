@@ -1,7 +1,7 @@
 # Manual feature selection for the play-type modeling task.
 #
 # These lists are the ONLY source of which candidate features enter the pipeline.
-# Edit them by hand based on the analysis in notebooks/02_feat_selection.ipynb
+# Edit them by hand based on the analysis in notebooks/02_feature_selection.ipynb
 # (correlation/VIF, mutual information, ANOVA F-test, chi-square). Delete a line
 # to drop that feature — there is no automated filter/threshold stage.
 #

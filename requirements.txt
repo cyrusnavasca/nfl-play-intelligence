@@ -11,6 +11,9 @@ lightgbm
 scipy
 joblib
 
+# Hyperparameter optimization
+optuna
+
 # Selection / stats (notebooks + feature selection)
 statsmodels
 
