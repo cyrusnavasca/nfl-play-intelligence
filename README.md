@@ -1,30 +1,40 @@
 # NFL Play Intelligence
 
+## Overview
+
 Predict whether an NFL offensive play will be a **run** or a **pass** from the
 pre-snap game state — down, distance, field position, score, formation, and
-lagged team tendencies. Binary classification, evaluated with 5-fold
-cross-validation on `roc_auc`.
+lagged team tendencies. Binary classification (`pass=1 / run=0`), evaluated with
+5-fold cross-validation on `roc_auc`. An interactive Streamlit dashboard scores
+hypothetical plays and explores experiments.
+
+## Data source
+
+Play-by-play from [`nfl_data_py`](https://github.com/nflverse/nfl_data_py)
+(`import_pbp_data`), **seasons 2018–2025** → 276,286 modeled plays after cleaning
+and leakage filtering. Ingest:
+
+```bash
+python3 -m src.ingestion.ingest_data --start-year 2018 --end-year 2025
+```
+
+Leakage guardrails: `epa`, `yards_gained`, IDs, dates, and raw score columns are
+never model inputs (see `DROP_ALWAYS` in `src/selection/shared/feature_schema.py`).
 
 ## Pipeline
 
 ```
 ingestion  ->  preprocessing  ->  features  ->  selection  ->  modeling
-(nfl_data_py)  (clean pbp)        (engineer)    (screen 34)    (CV + persist)
+(nfl_data_py)  (clean pbp)        (engineer)    (manual+embedded)  (CV + persist)
 ```
 
-1. **Ingest** raw play-by-play + player data from `nfl_data_py` → `data/raw/`.
-2. **Clean** play-by-play into `data/interim/pbp_clean.parquet`.
-3. **Engineer** situational, formation, rolling-team, and encoded features →
-   `data/interim/features_full.parquet`.
-4. **Select** — a **manual** candidate feature list (`configs/features/*.yaml`)
-   feeds an embedded (LightGBM gain) pruning stage → the modeling set at
-   `data/processed/play_type_modeling.parquet`. No automated filter screening.
+1. **Ingest** raw play-by-play → `data/raw/`.
+2. **Clean** into `data/interim/pbp_clean.parquet`.
+3. **Engineer** situational, formation, rolling-team, encoded features.
+4. **Select** — a **manual** candidate list (`configs/features/*.yaml`) feeds an
+   embedded (LightGBM gain) pruning stage → `data/processed/play_type_modeling.parquet`.
 5. **Model** — train/compare `baseline`, `random_forest`, `xgboost` under 5-fold
    CV; persist the winner to `artifacts/modeling/`.
-
-Leakage guardrails: `epa`, `yards_gained`, IDs, dates, and raw score columns are
-never model inputs (see `DROP_ALWAYS` in `src/selection/shared/feature_schema.py`).
-The target is stored as `pass=1 / run=0`.
 
 ## Setup
 
@@ -33,63 +43,82 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Usage
+## Run the dashboard
+
+The persisted best model (`artifacts/modeling/best_model/`) powers an interactive
+Streamlit app:
 
 ```bash
-# 1. Ingest raw data (play-by-play + players)
-python3 -m src.ingestion.ingest_data --start-year 2018 --end-year 2025
+streamlit run app/streamlit_app.py          # opens http://localhost:8501
+```
 
-# 2. Edit the manual feature list, then run selection (produces the modeling parquet)
-#    configs/features/default.yaml  — numeric:/categorical: lists + embedded threshold
-python3 -m src.selection.run_selection
-python3 -m src.selection.run_selection --features configs/features/my_trial.yaml
+Tabs: **Overview** (metrics, class balance) · **Feature Importance** (top-N bar) ·
+**Experiments** (leaderboard + learning-rate sweep) · **Play Predictor** (down /
+distance / formation / shotgun inputs → live P(pass) gauge + a what-if sweep).
 
-# 3. Validate the modeling parquet matches the schema contract
+## Run experiments
+
+```bash
+# feature selection (edit the manual list first)
+python3 -m src.selection.run_selection --features configs/features/default.yaml
+
+# validate the modeling parquet against the schema
 python3 -m src.data.schema
 
-# 4. Run a modeling experiment (profile-driven)
+# modeling experiment (profile-driven)
 python3 -m src.pipelines.run --config configs/models/default.yaml
-
-# Fixed experiment id / persist the winning model / reuse existing artifacts
-python3 -m src.pipelines.run --config configs/models/xgboost_tuned.yaml --experiment exp_003
-python3 -m src.pipelines.run --config configs/models/default.yaml --persist-best
-python3 -m src.pipelines.run --config configs/models/default.yaml --skip-training
+python3 -m src.pipelines.run --config configs/models/xgboost_tuned.yaml --tune --persist-best
 ```
 
-**Choosing features** — edit `configs/features/default.yaml` by hand (guided by
-`notebooks/02_feature_selection.ipynb`: VIF, MI, ANOVA, chi-square). Delete a line
-to drop a feature. Survivors go through embedded LightGBM pruning at
-`embedded_importance_threshold` (set `0.0` to keep the manual list as-is).
+Tune by copying a profile and editing values under `models.<model_key>` (never
+Python literals); compare runs via `model_comparison.csv` in the new experiment dir.
+See `docs/running_experiments.md`.
 
-**Tuning hyperparameters** — copy a model profile, edit values under
-`models.<model_key>` (never Python literals):
+## Results
 
-```bash
-cp configs/models/default.yaml configs/models/my_trial.yaml
-python3 -m src.pipelines.run --config configs/models/my_trial.yaml
-# compare runs via model_comparison.csv in the new experiment dir
+Best model: **XGBoost**, tuned via Optuna TPE (experiment `exp_007`), persisted to
+`artifacts/modeling/best_model/`.
+
+| Metric | Value |
+|--------|-------|
+| ROC-AUC (5-fold CV) | **0.8178** ± 0.0012 |
+| ROC-AUC (holdout test) | 0.8165 |
+| Plays / features | 276,286 / 65 |
+| Pass rate (base) | 58.2% |
+
+Most important features (gain):
+
+1. `is_qb_in_gun` — shotgun is the single strongest run/pass tell
+2. `offense_formation_EMPTY`
+3. `two_minute_drill`
+4. `defenders_in_box`
+5. `down`, `ydstogo`
+
+Reproduce the eval: set `EXPERIMENT_ID` at the top of
+`notebooks/03_model_evaluation.ipynb` (or leave `None` for the active experiment).
+
+## File structure
+
 ```
-
-## Layout
-
-```
+app/
+└── streamlit_app.py     interactive dashboard (loads best_model/)
 src/
-├── ingestion/      download raw pbp + players (nfl_data_py)
-├── preprocessing/  clean_pbp
-├── features/       situational, formation, team-rolling, encoding pipelines
-├── selection/      feature_config (manual), embedded, threshold -> modeling parquet
-├── data/           schema.py (single source of truth: paths, target, registry)
-├── models/         baseline, random_forest, xgboost builders + registry
-├── evaluation/     cross_validation, metrics, feature_importance, model_selection
-├── pipelines/      run/train/predict (thin wiring over evaluation/)
-└── utils/          experiment profiles + artifact resolution
-
+├── ingestion/           download raw pbp + players (nfl_data_py)
+├── preprocessing/       clean_pbp
+├── features/            situational, formation, team-rolling, encoding
+├── selection/           feature_config (manual), embedded -> modeling parquet
+├── data/                schema.py (single source of truth: paths, target, registry)
+├── models/              baseline, random_forest, xgboost builders + registry
+├── evaluation/          cross_validation, metrics, feature_importance, model_selection
+├── pipelines/           run/train/predict (thin wiring over evaluation/)
+└── utils/               experiment profiles + artifact resolution
 configs/
-├── features/       manual feature lists (default.yaml) -> selection
-└── models/         experiment profiles (default.yaml, xgboost_tuned.yaml)
-notebooks/          01_data_exploration, 02_feature_selection, 03_model_evaluation
-artifacts/modeling/ experiments/<id>/, best_model/, active.json
-docs/               design + handoff notes (see modeling_plan.md first)
+├── features/            manual feature lists -> selection
+└── models/              experiment profiles (default.yaml, xgboost_tuned.yaml, ...)
+notebooks/               01_data_exploration, 02_feature_selection, 03_model_evaluation
+artifacts/modeling/      experiments/<id>/, best_model/, active.json
+docs/                    design + handoff notes (start with modeling_plan.md)
+tests/                   suite incl. test_architecture.py (dependency rules)
 ```
 
 ## Architecture rules
@@ -97,20 +126,19 @@ docs/               design + handoff notes (see modeling_plan.md first)
 Enforced by `tests/test_architecture.py`:
 
 ```
-pipelines/     -> models/, evaluation/, data/, preprocessing/, utils/
-evaluation/    -> data/, utils/          (never imports pipelines/)
-models/        -> data/                  (never imports evaluation/)
+pipelines/  -> models/, evaluation/, data/, preprocessing/, utils/
+evaluation/ -> data/, utils/    (never imports pipelines/)
+models/     -> data/            (never imports evaluation/)
 ```
 
 All CV/fold logic lives in `src/evaluation/`; `src/pipelines/` is thin wiring.
-Column names, paths, target, and model-registry keys come only from
-`src/data/schema.py` and `src/selection/shared/feature_schema.py`.
+Column names, paths, target, and registry keys come only from `src/data/schema.py`
+and `src/selection/shared/feature_schema.py`.
 
 ## Tests
 
 ```bash
 pytest                 # full suite (testpaths=tests)
-pytest tests/pipelines/test_play_type_train.py -q
 ```
 
 ## Docs
@@ -119,3 +147,4 @@ pytest tests/pipelines/test_play_type_train.py -q
 - `docs/feature_selection_plan.md` — upstream selection producing the modeling parquet.
 - `docs/running_experiments.md` — profiles, starter configs, comparing runs.
 - `docs/handoff_metrics_and_hyperparams.md` — metrics/config snapshot schema.
+```

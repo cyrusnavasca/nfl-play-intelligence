@@ -27,3 +27,7 @@ seaborn
 
 # Tests (tests/evaluation/test_feature_importance.py: numpy, pytest, scikit-learn, pandas)
 pytest
+
+# dashboard
+streamlit>=1.59
+plotly>=6.0
