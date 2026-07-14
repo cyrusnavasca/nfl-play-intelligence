@@ -1,0 +1,5 @@
+# Exclude Jupyter notebooks from GitHub's language statistics.
+# Notebooks are JSON with embedded base64 plot images, which otherwise dominate
+# the byte-based language bar. The real codebase is Python.
+*.ipynb linguist-vendored
+*.ipynb linguist-documentation
