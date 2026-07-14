@@ -1,0 +1,24 @@
+# XGBoost — exp_007 tuned params with learning_rate bumped to 0.2.
+# Run: python3 -m src.pipelines.run --config configs/models/xgboost_lr02.yaml --experiment exp_008
+
+name: xgboost_lr02
+description: exp_007 tuned XGBoost, learning_rate=0.2.
+
+seed: 42
+n_folds: 5
+persist_best: false
+
+models:
+  xgboost:
+    eval_metric: logloss
+    random_state: 42
+    verbosity: 0
+    n_estimators: 800
+    max_depth: 9
+    learning_rate: 0.2
+    subsample: 0.7094987150323492
+    colsample_bytree: 0.9886119673694892
+    min_child_weight: 12
+    reg_lambda: 0.9327893590138686
+    reg_alpha: 0.05277458621594773
+    gamma: 2.4773180191777024
